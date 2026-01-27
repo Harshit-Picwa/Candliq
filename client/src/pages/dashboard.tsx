@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Header } from "@/components/header";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
 import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2 } from "lucide-react";
@@ -30,6 +31,30 @@ import {
 import { format } from "date-fns";
 
 export default function DashboardPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      console.log("[Dashboard] User not authenticated, redirecting to login");
+      setLocation("/login");
+    }
+  }, [isAuthenticated, authLoading, setLocation]);
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Don't render dashboard if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
+  }
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");

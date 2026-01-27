@@ -44,13 +44,21 @@ function AuthenticatedRouter() {
       const isProtectedRoute = protectedRoutes.some(route => location.startsWith(route));
       // Also redirect if accessing root path (/) when not authenticated
       const isRootPath = location === "/";
-      if ((isProtectedRoute || isRootPath) && location !== "/login") {
+      if ((isProtectedRoute || isRootPath) && location !== "/login" && location !== "/") {
         console.log("[App] Redirecting unauthenticated user to /login from:", location);
         setLocation("/login");
       }
     }
   }, [isAuthenticated, isLoading, location, setLocation]);
   
+  // Redirect authenticated users from root path to dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && location === "/") {
+      console.log("[App] Redirecting authenticated user from / to /dashboard");
+      setLocation("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, location, setLocation]);
+
   // Also redirect authenticated users away from login page
   useEffect(() => {
     if (!isLoading && isAuthenticated && location === "/login") {
@@ -72,6 +80,7 @@ function AuthenticatedRouter() {
       <Route path="/login" component={LoginPage} />
       {isAuthenticated ? (
         <>
+          {/* Protected routes - only accessible when authenticated */}
           <Route path="/dashboard" component={DashboardPage} />
           <Route path="/projects/:id" component={ProjectSetupPage} />
           <Route path="/projects/:id/questions" component={QuestionsSetupPage} />
@@ -83,7 +92,9 @@ function AuthenticatedRouter() {
         </>
       ) : (
         <>
+          {/* Public routes - accessible without authentication */}
           <Route path="/" component={LandingPage} />
+          {/* Catch-all: redirect any other route to login */}
           <Route component={LoginPage} />
         </>
       )}

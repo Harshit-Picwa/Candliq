@@ -2,6 +2,14 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    // Handle 401 Unauthorized - redirect to login
+    if (res.status === 401) {
+      // Only redirect if we're not already on the login page
+      if (!window.location.pathname.includes("/login")) {
+        console.log("[queryClient] 401 Unauthorized, redirecting to login");
+        window.location.href = "/login";
+      }
+    }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }

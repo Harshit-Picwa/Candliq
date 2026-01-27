@@ -26,13 +26,26 @@ class AuthStorage implements IAuthStorage {
   }
 
   async createUser(userData: Omit<UpsertUser, "id">): Promise<User> {
+    // Prevent creation of dev@localhost user
+    if (userData.email === "dev@localhost" || userData.email?.toLowerCase() === "dev@localhost") {
+      throw new Error("Cannot create dev@localhost user. This email is reserved.");
+    }
+    
+    console.log(`[auth/storage] Creating user with email: ${userData.email}`);
     const user = await db.user.create({
       data: userData as Prisma.UserCreateInput,
     });
+    console.log(`[auth/storage] User created: ${user.id} (${user.email})`);
     return user as User;
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    // Prevent creation/update of dev@localhost user
+    if (userData.email === "dev@localhost" || userData.email?.toLowerCase() === "dev@localhost") {
+      throw new Error("Cannot create or update dev@localhost user. This email is reserved.");
+    }
+    
+    console.log(`[auth/storage] Upserting user with email: ${userData.email}`);
     const user = await db.user.upsert({
       where: { id: userData.id },
       create: userData as Prisma.UserCreateInput,
@@ -41,6 +54,7 @@ class AuthStorage implements IAuthStorage {
         updatedAt: new Date(),
       } as Prisma.UserUpdateInput,
     });
+    console.log(`[auth/storage] User upserted: ${user.id} (${user.email})`);
     return user as User;
   }
 }

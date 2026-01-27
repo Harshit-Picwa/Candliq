@@ -54,17 +54,68 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
   
-  // Development mode: Clear all sessions on startup if CLEAR_SESSIONS_ON_START is set
-  if (process.env.NODE_ENV === "development" && process.env.CLEAR_SESSIONS_ON_START === "true") {
-    console.log("[auth] Development mode: Clearing all sessions on startup...");
+  // Clear all sessions on startup if CLEAR_SESSIONS_ON_START is set
+  // This is useful for development to ensure users must log in again after server restart
+  if (process.env.CLEAR_SESSIONS_ON_START === "true") {
+    console.log("[auth] Clearing all sessions on startup (CLEAR_SESSIONS_ON_START=true)...");
     try {
       const { db } = await import("../db");
-      await db.session.deleteMany({});
-      console.log("[auth] All sessions cleared");
+      const result = await db.session.deleteMany({});
+      console.log(`[auth] All sessions cleared. Deleted ${result.count} session(s)`);
     } catch (error) {
       console.error("[auth] Error clearing sessions:", error);
+      console.error("[auth] Make sure DATABASE_URL is set and the database is accessible");
     }
   }
+
+  // NOTE: No automatic dev user is created. Users must sign up through the /api/signup endpoint.
+  // If you see a dev user in your database, it was likely created manually or through signup.
+  
+  // Check for and log any existing dev users (for debugging)
+  // Also check if any dev users are being created automatically
+  let devUserCheckCount = 0;
+  const checkForDevUser = async () => {
+    try {
+      const devUser = await authStorage.getUserByEmail("dev@localhost");
+      if (devUser) {
+        devUserCheckCount++;
+        console.warn(`[auth] ⚠️  WARNING #${devUserCheckCount}: Found dev user (dev@localhost) in database.`);
+        console.warn("[auth] This user was NOT created by the application code.");
+        console.warn("[auth] Possible sources: database trigger, migration, external script, or manual insertion.");
+        console.warn("[auth] To remove it, use: DELETE /api/auth/remove-dev-users?email=dev@localhost");
+        
+        // Auto-delete if configured
+        if (process.env.AUTO_DELETE_DEV_USER === "true") {
+          try {
+            const { db } = await import("../db");
+            await db.user.deleteMany({ where: { email: "dev@localhost" } });
+            console.log("[auth] ✓ Auto-deleted dev@localhost user (AUTO_DELETE_DEV_USER=true)");
+          } catch (error) {
+            console.error("[auth] Error auto-deleting dev user:", error);
+          }
+        }
+      } else if (devUserCheckCount === 0) {
+        console.log("[auth] ✓ No dev@localhost user found (as expected)");
+      }
+    } catch (error) {
+      // Ignore errors during this check
+      if (devUserCheckCount === 0) {
+        console.log("[auth] Could not check for dev user (this is OK if database is not yet initialized)");
+      }
+    }
+  };
+  
+  // Check immediately
+  await checkForDevUser();
+  
+  // Check periodically every 30 seconds to catch any automatic creation
+  if (process.env.NODE_ENV === "development") {
+    setInterval(checkForDevUser, 30000);
+    console.log("[auth] 🔍 Monitoring for dev@localhost user creation (checking every 30 seconds)");
+  }
+  
+  // Explicitly prevent any automatic user creation
+  console.log("[auth] ✓ Automatic user creation is DISABLED. Users must sign up through /api/signup");
   
   // Middleware to validate and clear invalid sessions
   app.use(async (req: any, res, next) => {
@@ -198,6 +249,12 @@ export async function setupAuth(app: Express) {
         return res.status(400).json({ error: "Password must be at least 8 characters" });
       }
 
+      // Prevent creation of dev@localhost user
+      if (email === "dev@localhost" || email?.toLowerCase() === "dev@localhost") {
+        console.warn("[auth] Attempt to create dev@localhost user blocked");
+        return res.status(400).json({ error: "Cannot create dev@localhost user. This email is reserved." });
+      }
+
       // Check if user already exists
       const existingUser = await authStorage.getUserByEmail(email);
       if (existingUser) {
@@ -208,6 +265,7 @@ export async function setupAuth(app: Express) {
       const passwordHash = await bcrypt.hash(password, 10);
 
       // Create user
+      console.log(`[auth] Creating new user: ${email}`);
       const user = await authStorage.createUser({
         email,
         passwordHash,
@@ -215,6 +273,7 @@ export async function setupAuth(app: Express) {
         lastName: lastName || null,
         profileImageUrl: null,
       });
+      console.log(`[auth] User created successfully: ${user.id} (${email})`);
 
       // Auto-login after signup
       req.login(

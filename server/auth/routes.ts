@@ -70,7 +70,19 @@ export function registerAuthRoutes(app: Express): void {
   });
   
   // GET endpoint to force logout and redirect (easier for testing)
+  // Also clears all sessions from database if CLEAR_ALL_SESSIONS=true is in query
   app.get("/api/auth/clear-session", async (req: any, res) => {
+    // If ?clearAll=true, clear all sessions from database
+    if (req.query.clearAll === "true") {
+      try {
+        const { db } = await import("../db");
+        const result = await db.session.deleteMany({});
+        console.log(`[auth] Cleared all sessions from database. Deleted ${result.count} session(s)`);
+      } catch (error) {
+        console.error("[auth] Error clearing all sessions:", error);
+      }
+    }
+    
     req.logout((err: any) => {
       if (err) {
         console.error("[auth] Error during force logout:", err);
@@ -79,9 +91,34 @@ export function registerAuthRoutes(app: Express): void {
         if (destroyErr) {
           console.error("[auth] Error destroying session:", destroyErr);
         }
-        res.clearCookie("connect.sid", { path: "/" });
+        res.clearCookie("connect.sid", { path: "/", httpOnly: true, secure: false });
         res.redirect("/login");
       });
     });
+  });
+
+  // Endpoint to remove dev users (for cleanup)
+  // DELETE /api/auth/remove-dev-users?email=dev@localhost
+  app.delete("/api/auth/remove-dev-users", async (req: any, res) => {
+    try {
+      const { db } = await import("../db");
+      const email = req.query.email || "dev@localhost";
+      
+      const deletedUsers = await db.user.deleteMany({
+        where: {
+          email: email,
+        },
+      });
+      
+      console.log(`[auth] Removed ${deletedUsers.count} dev user(s) with email: ${email}`);
+      res.json({ 
+        success: true, 
+        message: `Removed ${deletedUsers.count} user(s) with email ${email}`,
+        count: deletedUsers.count 
+      });
+    } catch (error: any) {
+      console.error("[auth] Error removing dev users:", error);
+      res.status(500).json({ error: "Failed to remove dev users", details: error?.message });
+    }
   });
 }
