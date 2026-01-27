@@ -10,7 +10,12 @@ The application runs in local development mode. You need to set up these environ
 
 ```env
 # Database (REQUIRED)
-DATABASE_URL=postgresql://user:password@localhost:5432/candiq_ai
+# Recommended: Use Supabase (see DATABASE_SETUP.md for instructions)
+# Supabase connection string format:
+# DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres
+# 
+# For local PostgreSQL:
+# DATABASE_URL=postgresql://user:password@localhost:5432/candiq_ai
 
 # Session Secret (REQUIRED - generate a random string)
 SESSION_SECRET=your-random-session-secret-here
@@ -97,8 +102,8 @@ For production deployments:
 
 The application uses local authentication for development:
 
-- Creates a mock user for development (`dev@localhost`)
-- Allows access to all features
+- Users must sign up or log in to access the application
+- No automatic dev user is created
 - Works in both development and production modes
 
-**No additional configuration needed** - the app automatically uses local authentication mode.
+**Users must create accounts through the signup page** - no default users are created automatically.

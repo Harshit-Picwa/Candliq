@@ -1,24 +1,59 @@
 # Database Setup Guide
 
-## Quick Setup Options
+## Recommended: Supabase (Free Tier)
 
-### Option 1: Free Cloud Database (Recommended - Easiest)
+**Supabase is the recommended database solution for this project.** It provides a fully managed PostgreSQL database with a generous free tier, automatic backups, and easy scaling.
 
-#### Using Supabase (Free Tier)
-1. Go to https://supabase.com and sign up
-2. Create a new project
-3. Go to **Settings** → **Database**
-4. Copy the **Connection string** (URI format)
-5. It will look like: `postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres`
-6. Paste it into your `.env` file as `DATABASE_URL`
+### Quick Setup Steps
 
-#### Using Neon (Free Tier)
+1. **Sign up for Supabase**
+   - Go to https://supabase.com and create an account
+   - Click "New Project"
+   - Fill in your project details (name, database password, region)
+   - Wait for the project to be provisioned (takes ~2 minutes)
+
+2. **Get your connection string**
+   - Go to **Settings** → **Database**
+   - Scroll down to **Connection string** section
+   - Select **URI** format
+   - Copy the connection string
+   - It will look like: `postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres`
+
+3. **Update your `.env` file**
+   ```env
+   DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres
+   ```
+   Replace `[YOUR-PASSWORD]` with the database password you set when creating the project.
+
+4. **Run migrations**
+   ```bash
+   npm run db:migrate
+   ```
+
+### Supabase Benefits
+
+- ✅ **Free tier**: 500MB database, 2GB bandwidth, unlimited API requests
+- ✅ **Automatic backups**: Daily backups included
+- ✅ **Real-time capabilities**: Built-in real-time subscriptions (if needed later)
+- ✅ **Built-in auth**: Can integrate Supabase Auth later if desired
+- ✅ **PostgreSQL compatible**: Works seamlessly with Prisma and all existing code
+- ✅ **No local setup**: No need to install PostgreSQL locally
+
+### Supabase Connection Pooling (Optional)
+
+For production or high-traffic scenarios, Supabase recommends using connection pooling. You can use the **Session mode** connection string from the Supabase dashboard, which uses port `6543` instead of `5432`. This helps manage database connections more efficiently.
+
+---
+
+## Alternative Options
+
+### Option 2: Neon (Free Tier)
 1. Go to https://neon.tech and sign up
 2. Create a new project
 3. Copy the connection string from the dashboard
 4. Paste it into your `.env` file as `DATABASE_URL`
 
-### Option 2: Local PostgreSQL
+### Option 3: Local PostgreSQL
 
 #### Install PostgreSQL on Windows
 1. Download from: https://www.postgresql.org/download/windows/

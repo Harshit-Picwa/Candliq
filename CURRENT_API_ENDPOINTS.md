@@ -8,11 +8,12 @@ This document lists all API endpoints currently implemented in the Candiq-AI bac
 ## Authentication Endpoints
 **File:** `server/auth/auth.ts` and `server/auth/routes.ts`
 
-### GET `/api/login`
-- **Description:** Creates a local development session
-- **Authentication:** Not required
-- **Response:** Redirects to app after creating session
-- **Process:** Creates a mock user and session for local development
+### POST `/api/login`
+- **Description:** Authenticates a user with email and password
+- **Authentication:** Not required (but credentials required in body)
+- **Request Body:** `{ email: string, password: string }`
+- **Response:** `{ success: true, user: User }` or error
+- **Process:** Validates credentials and creates a session
 
 ### GET `/api/callback`
 - **Description:** Callback endpoint (redirects to app)
