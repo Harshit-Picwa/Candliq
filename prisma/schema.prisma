@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================
+// Sessions Table
+// =====================
+model Session {
+  sid    String   @id @db.VarChar
+  sess   Json     @db.JsonB
+  expire DateTime @db.Timestamp
+
+  @@index([expire], name: "IDX_session_expire")
+  @@map("sessions")
+}
+
+// =====================
+// Users Table
+// =====================
+model User {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar
+  email          String?   @unique @db.VarChar
+  passwordHash   String?   @map("password_hash") @db.VarChar
+  firstName      String?   @map("first_name") @db.VarChar
+  lastName       String?   @map("last_name") @db.VarChar
+  profileImageUrl String?  @map("profile_image_url") @db.VarChar
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamp
+  updatedAt      DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp
+
+  @@map("users")
+}
+
+// =====================
+// Projects Table
+// =====================
+model Project {
+  id                    Int       @id @default(autoincrement())
+  userId                String    @map("user_id") @db.VarChar
+  title                 String
+  jdText                String?   @map("jd_text") @db.Text
+  smeNotesText          String?   @map("sme_notes_text") @db.Text
+  companyWebsite        String?   @map("company_website") @db.VarChar
+  interviewDuration     Int?      @map("interview_duration") // Duration in minutes
+  competencyRubricJson  Json?     @map("competency_rubric_json") @db.JsonB
+  screeningQuestionsJson Json?    @map("screening_questions_json") @db.JsonB
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp
+
+  interviews Interview[]
+
+  @@map("projects")
+}
+
+// =====================
+// Interviews Table
+// =====================
+model Interview {
+  id            Int       @id @default(autoincrement())
+  projectId     Int       @map("project_id")
+  candidateName String    @map("candidate_name")
+  candidateEmail String?   @map("candidate_email") @db.Text
+  resumeText    String?   @map("resume_text") @db.Text
+  transcriptJson Json?     @map("transcript_json") @db.JsonB
+  reportJson    Json?     @map("report_json") @db.JsonB
+  notesJson     Json?     @map("notes_json") @db.JsonB
+  status        String    @default("draft")
+  consentGiven  Boolean   @default(false) @map("consent_given")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("interviews")
+}
+
+// =====================
+// Conversations Table (for Chat feature)
+// =====================
+model Conversation {
+  id        Int       @id @default(autoincrement())
+  title     String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp
+
+  messages Message[]
+
+  @@map("conversations")
+}
+
+// =====================
+// Messages Table (for Chat feature)
+// =====================
+model Message {
+  id             Int       @id @default(autoincrement())
+  conversationId Int       @map("conversation_id")
+  role           String
+  content        String    @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}

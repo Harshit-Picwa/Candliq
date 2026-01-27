@@ -6,6 +6,9 @@ import { z } from "zod";
 // Re-export auth models
 export * from "./models/auth";
 
+// Re-export chat models
+export * from "./models/chat";
+
 // =====================
 // Projects Table
 // =====================
@@ -15,6 +18,8 @@ export const projects = pgTable("projects", {
   title: text("title").notNull(),
   jdText: text("jd_text"),
   smeNotesText: text("sme_notes_text"),
+  companyWebsite: varchar("company_website"),
+  interviewDuration: integer("interview_duration"),
   competencyRubricJson: jsonb("competency_rubric_json").$type<Competency[]>(),
   screeningQuestionsJson: jsonb("screening_questions_json").$type<ScreeningQuestion[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -72,6 +77,7 @@ export interface TranscriptEntry {
   text: string;
   timestamp: number;
   isFinal: boolean;
+  evaluation?: AnswerEvaluation;
 }
 
 export interface CompetencyScore {
@@ -111,6 +117,17 @@ export interface AISuggestion {
   question: string;
   competencyId?: string;
   reason: string;
+}
+
+export interface AnswerEvaluation {
+  quality: "strong" | "moderate" | "weak";
+  score: number; // 1-5
+  signals: {
+    strong: string[];
+    weak: string[];
+  };
+  reasoning: string;
+  questionId?: string;
 }
 
 // =====================

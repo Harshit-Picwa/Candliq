@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import { Blob } from "buffer";
+import type { TranscriptEntry } from "@shared/schema";
 
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY!,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: process.env.OPENAI_API_KEY!,
+  baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
 });
 
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
@@ -28,6 +29,65 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
     
     return "";
   }
+}
+
+/**
+ * Detects speaker based on conversation patterns and heuristics
+ * Uses conversation flow, question patterns, and context to determine speaker
+ */
+export function detectSpeaker(
+  text: string,
+  transcript: TranscriptEntry[],
+  isFirstInTurn: boolean = true
+): "interviewer" | "candidate" {
+  const trimmedText = text.trim();
+  
+  // If this is the first entry in the conversation, likely interviewer
+  if (transcript.length === 0) {
+    return "interviewer";
+  }
+  
+  // If last speaker was candidate, this is likely interviewer (alternating pattern)
+  const lastEntry = transcript[transcript.length - 1];
+  if (lastEntry && lastEntry.speaker === "candidate" && isFirstInTurn) {
+    return "interviewer";
+  }
+  
+  // If last speaker was interviewer, this is likely candidate
+  if (lastEntry && lastEntry.speaker === "interviewer" && isFirstInTurn) {
+    return "candidate";
+  }
+  
+  // Question patterns indicate interviewer
+  const questionPatterns = [
+    /^(tell me|can you|how did|what|why|when|where|describe|explain|walk me through|give me an example|tell us about)/i,
+    /\?$/,
+    /^(so|okay|alright|great|interesting|i see|that's|that is)/i,
+  ];
+  
+  for (const pattern of questionPatterns) {
+    if (pattern.test(trimmedText)) {
+      return "interviewer";
+    }
+  }
+  
+  // Long responses (likely candidate answering)
+  if (trimmedText.length > 100 && isFirstInTurn) {
+    return "candidate";
+  }
+  
+  // Short responses after interviewer question (likely candidate)
+  if (lastEntry?.speaker === "interviewer" && trimmedText.length < 50) {
+    return "candidate";
+  }
+  
+  // Default: alternate based on last speaker
+  if (lastEntry) {
+    return lastEntry.speaker === "interviewer" ? "candidate" : "interviewer";
+  }
+  
+  // Fallback: assume candidate if uncertain
+  return "candidate";
 }
 
 export async function transcribeAudioWithRetry(

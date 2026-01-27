@@ -13,7 +13,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, Users, ChevronRight } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, Users, ChevronRight, Upload, X, CheckCircle } from "lucide-react";
 
 export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
@@ -27,12 +27,20 @@ export default function ProjectSetupPage() {
   const [title, setTitle] = useState("");
   const [jdText, setJdText] = useState("");
   const [smeNotes, setSmeNotes] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
+  const [interviewDuration, setInterviewDuration] = useState<number>(30);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     if (project) {
       setTitle(project.title);
       setJdText(project.jdText || "");
       setSmeNotes(project.smeNotesText || "");
+      setCompanyWebsite((project as any).companyWebsite || "");
+      setInterviewDuration((project as any).interviewDuration || 30);
     }
   }, [project]);
 
@@ -49,31 +57,167 @@ export default function ProjectSetupPage() {
     },
   });
 
+  const uploadPDF = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("pdf", file);
+      
+      setUploading(true);
+      setUploadProgress(0);
+      
+      // Simulate progress (since we can't track actual upload progress easily)
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => Math.min(prev + 10, 90));
+      }, 200);
+      
+      try {
+        const response = await fetch(`/api/projects/${id}/upload-jd`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        
+        clearInterval(progressInterval);
+        setUploadProgress(100);
+        
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || "Upload failed");
+        }
+        
+        const result = await response.json();
+        return result;
+      } finally {
+        setTimeout(() => {
+          setUploading(false);
+          setUploadProgress(0);
+        }, 500);
+      }
+    },
+    onSuccess: (data) => {   
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
+      setJdText(data.jdText || "");
+      toast({ title: "PDF uploaded", description: "Text extracted from PDF successfully." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Upload failed", 
+        description: error?.message || "Failed to upload PDF.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
   const generateQuestions = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", `/api/projects/${id}/generate-questions`);
+      const response = await fetch(`/api/projects/${id}/generate-questions`, {
+        method: "POST",
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        const error = new Error(errorData.error || errorData.details || response.statusText);
+        (error as any).status = response.status;
+        (error as any).data = errorData;
+        throw error;
+      }
+      
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
       toast({ title: "Questions generated", description: "AI has created screening questions based on your JD." });
       navigate(`/projects/${id}/questions`);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to generate questions.", variant: "destructive" });
+    onError: (error: any) => {
+      const errorMessage = error?.data?.error || error?.message || "Failed to generate questions.";
+      const errorDetails = error?.data?.details || "";
+      toast({ 
+        title: "Error", 
+        description: errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage, 
+        variant: "destructive" 
+      });
     },
   });
 
   const handleSave = () => {
-    updateProject.mutate({ title, jdText, smeNotesText: smeNotes });
+    updateProject.mutate({ 
+      title, 
+      jdText, 
+      smeNotesText: smeNotes,
+      companyWebsite: companyWebsite || undefined,
+      interviewDuration: interviewDuration || undefined,
+    });
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!jdText.trim()) {
       toast({ title: "Job description required", description: "Please add a job description first.", variant: "destructive" });
       return;
     }
-    handleSave();
-    generateQuestions.mutate();
+    
+    try {
+      // First, save the project with the JD
+      await updateProject.mutateAsync({ 
+        title, 
+        jdText, 
+        smeNotesText: smeNotes,
+        companyWebsite: companyWebsite || undefined,
+        interviewDuration: interviewDuration || undefined,
+      });
+      
+      // Wait a moment for the database to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Then generate questions
+      generateQuestions.mutate();
+    } catch (error: any) {
+      toast({ 
+        title: "Save failed", 
+        description: error?.message || "Failed to save project before generating questions.", 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const handleFileSelect = (file: File) => {
+    if (file.type !== "application/pdf") {
+      toast({ title: "Invalid file type", description: "Only PDF files are allowed.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "PDF must be less than 10MB.", variant: "destructive" });
+      return;
+    }
+    setUploadedFileName(file.name);
+    uploadPDF.mutate(file);
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFileSelect(e.target.files[0]);
+    }
   };
 
   if (isLoading) {
@@ -144,10 +288,75 @@ export default function ProjectSetupPage() {
                 <CardHeader>
                   <CardTitle>Job Description</CardTitle>
                   <CardDescription>
-                    Paste or type the job description. This will be used to extract competencies and generate screening questions.
+                    Upload a PDF or paste the job description. This will be used to extract competencies and generate screening questions.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                  <div
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                      dragActive
+                        ? "border-primary bg-primary/5"
+                        : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                    } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
+                  >
+                    <input
+                      type="file"
+                      id="pdf-upload"
+                      accept=".pdf"
+                      onChange={handleFileInput}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="pdf-upload"
+                      className="cursor-pointer flex flex-col items-center gap-2"
+                    >
+                      <Upload className="w-8 h-8 text-muted-foreground" />
+                      <div>
+                        <span className="text-sm font-medium text-primary">Click to upload</span> or drag and drop
+                      </div>
+                      <p className="text-xs text-muted-foreground">PDF file (max 10MB)</p>
+                    </label>
+                    {uploading && (
+                      <div className="mt-4">
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div
+                            className="bg-primary h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">Uploading... {uploadProgress}%</p>
+                      </div>
+                    )}
+                    {uploadedFileName && !uploading && (
+                      <div className="mt-4 flex items-center justify-center gap-2 text-sm text-green-600">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>{uploadedFileName}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadedFileName(null);
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">Or paste text</span>
+                    </div>
+                  </div>
                   <Textarea
                     value={jdText}
                     onChange={(e) => setJdText(e.target.value)}
@@ -179,6 +388,51 @@ export default function ProjectSetupPage() {
               </Card>
             </TabsContent>
           </Tabs>
+
+          <div className="space-y-6 mt-8">
+            <Card>
+              <CardHeader>
+                <CardTitle>Campaign Settings</CardTitle>
+                <CardDescription>
+                  Configure interview duration and company information to customize question generation
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="interview-duration">Interview Duration (minutes)</Label>
+                  <select
+                    id="interview-duration"
+                    value={interviewDuration}
+                    onChange={(e) => setInterviewDuration(parseInt(e.target.value))}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value={15}>15 minutes (6 questions)</option>
+                    <option value={20}>20 minutes (7 questions)</option>
+                    <option value={30}>30 minutes (8 questions)</option>
+                    <option value={45}>45 minutes (9 questions)</option>
+                    <option value={60}>60 minutes (10 questions)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Question count will be adjusted based on duration: {interviewDuration <= 20 ? 6 : interviewDuration <= 30 ? 8 : interviewDuration <= 45 ? 9 : 10} questions
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="company-website">Company Website (Optional)</Label>
+                  <Input
+                    id="company-website"
+                    type="url"
+                    value={companyWebsite}
+                    onChange={(e) => setCompanyWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    AI will analyze the company website to understand culture and adjust questions accordingly
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 p-6 rounded-lg bg-card border">
             <div className="flex items-center gap-4">

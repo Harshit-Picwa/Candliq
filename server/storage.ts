@@ -1,12 +1,10 @@
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
-import {
-  projects,
-  interviews,
-  type Project,
-  type InsertProject,
-  type Interview,
-  type InsertInterview,
+import { Prisma } from "@prisma/client";
+import type {
+  Project,
+  Interview,
+  InsertProject,
+  InsertInterview,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -25,57 +23,81 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async getProjectsByUser(userId: string): Promise<Project[]> {
-    return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.createdAt));
+    const projects = await db.project.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+    return projects as Project[];
   }
 
   async getProject(id: number): Promise<Project | undefined> {
-    const [project] = await db.select().from(projects).where(eq(projects.id, id));
-    return project || undefined;
+    const project = await db.project.findUnique({
+      where: { id },
+    });
+    return project as Project | undefined;
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const [created] = await db.insert(projects).values(project).returning();
-    return created;
+    const created = await db.project.create({
+      data: project as Prisma.ProjectCreateInput,
+    });
+    return created as Project;
   }
 
   async updateProject(id: number, data: Partial<Project>): Promise<Project | undefined> {
-    const [updated] = await db
-      .update(projects)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(projects.id, id))
-      .returning();
-    return updated || undefined;
+    const updated = await db.project.update({
+      where: { id },
+      data: {
+        ...data,
+        updatedAt: new Date(),
+      } as Prisma.ProjectUpdateInput,
+    });
+    return updated as Project | undefined;
   }
 
   async deleteProject(id: number): Promise<void> {
-    await db.delete(projects).where(eq(projects.id, id));
+    await db.project.delete({
+      where: { id },
+    });
   }
 
   async getInterviewsByProject(projectId: number): Promise<Interview[]> {
-    return db.select().from(interviews).where(eq(interviews.projectId, projectId)).orderBy(desc(interviews.createdAt));
+    const interviews = await db.interview.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "desc" },
+    });
+    return interviews as Interview[];
   }
 
   async getInterview(id: number): Promise<Interview | undefined> {
-    const [interview] = await db.select().from(interviews).where(eq(interviews.id, id));
-    return interview || undefined;
+    const interview = await db.interview.findUnique({
+      where: { id },
+    });
+    return interview as Interview | undefined;
   }
 
   async createInterview(interview: InsertInterview): Promise<Interview> {
-    const [created] = await db.insert(interviews).values(interview).returning();
-    return created;
+    const created = await db.interview.create({
+      data: interview as Prisma.InterviewCreateInput,
+    });
+    return created as Interview;
   }
 
   async updateInterview(id: number, data: Partial<Interview>): Promise<Interview | undefined> {
-    const [updated] = await db
-      .update(interviews)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(interviews.id, id))
-      .returning();
-    return updated || undefined;
+    const updated = await db.interview.update({
+      where: { id },
+      data: {
+        ...data,
+        updatedAt: new Date(),
+      } as Prisma.InterviewUpdateInput,
+    });
+    return updated as Interview | undefined;
   }
 
   async deleteInterview(id: number): Promise<void> {
-    await db.delete(interviews).where(eq(interviews.id, id));
+    await db.interview.delete({
+      where: { id },
+    });
   }
 }
 

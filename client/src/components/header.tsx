@@ -75,17 +75,19 @@ export function Header() {
                   </div>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <a href="/api/logout" className="flex items-center gap-2 cursor-pointer" data-testid="button-logout">
-                    <LogOut className="h-4 w-4" />
-                    Log out
-                  </a>
+                <DropdownMenuItem 
+                  onClick={() => logout()}
+                  className="flex items-center gap-2 cursor-pointer" 
+                  data-testid="button-logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Log out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
             <Button asChild data-testid="button-login">
-              <a href="/api/login">Log in</a>
+              <Link href="/login">Log in</Link>
             </Button>
           )}
         </div>

@@ -18,7 +18,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <Button asChild data-testid="button-login-header">
-              <a href="/api/login">Log in</a>
+              <Link href="/login">Log in</Link>
             </Button>
           </div>
         </div>
@@ -40,10 +40,10 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Button size="lg" asChild data-testid="button-get-started">
-                <a href="/api/login" className="gap-2">
+                <Link href="/login" className="gap-2">
                   Get Started Free
                   <ArrowRight className="w-4 h-4" />
-                </a>
+                </Link>
               </Button>
               <p className="text-sm text-muted-foreground">No credit card required</p>
             </div>
@@ -143,10 +143,10 @@ export default function LandingPage() {
               Start for free. No credit card required.
             </p>
             <Button size="lg" variant="secondary" asChild data-testid="button-cta-bottom">
-              <a href="/api/login" className="gap-2">
+              <Link href="/login" className="gap-2">
                 Get Started
                 <ArrowRight className="w-4 h-4" />
-              </a>
+              </Link>
             </Button>
           </div>
         </section>

@@ -219,13 +219,21 @@ export default function InterviewCockpitPage() {
           const data = JSON.parse(event.data);
           if (data.type === "transcript") {
             const entry: TranscriptEntry = {
-              id: crypto.randomUUID(),
+              id: data.id || crypto.randomUUID(),
               speaker: data.speaker || "candidate",
               text: data.text,
               timestamp: Date.now(),
               isFinal: data.isFinal,
             };
             setTranscript((prev) => {
+              // Update existing entry if ID matches, otherwise add new
+              const existingIndex = prev.findIndex(e => e.id === entry.id);
+              if (existingIndex >= 0) {
+                const updated = [...prev];
+                updated[existingIndex] = { ...updated[existingIndex], ...entry };
+                return updated;
+              }
+              
               if (!data.isFinal && prev.length > 0) {
                 const last = prev[prev.length - 1];
                 if (!last.isFinal && last.speaker === entry.speaker) {
@@ -235,6 +243,36 @@ export default function InterviewCockpitPage() {
               return [...prev, entry];
             });
             setAiStatus("listening");
+          } else if (data.type === "answer_evaluation") {
+            setTranscript((prev) => {
+              return prev.map((entry) => {
+                if (entry.id === data.entryId) {
+                  return {
+                    ...entry,
+                    evaluation: {
+                      quality: data.quality,
+                      score: data.score,
+                      signals: data.signals,
+                      reasoning: data.reasoning,
+                      questionId: data.questionId,
+                    },
+                  };
+                }
+                return entry;
+              });
+            });
+            setAiStatus("idle");
+            toast({
+              title: "Answer Evaluated",
+              description: `Quality: ${data.quality} (${data.score}/5)`,
+            });
+          } else if (data.type === "evaluating") {
+            setAiStatus("thinking");
+          } else if (data.type === "question_marked") {
+            toast({
+              title: "Question Marked",
+              description: "Answer evaluation will begin after candidate responds",
+            });
           } else if (data.type === "suggestion") {
             setSuggestions(data.suggestions || []);
             setAiStatus("idle");
@@ -306,6 +344,19 @@ export default function InterviewCockpitPage() {
           : [...prev.questionsAsked, questionId],
       };
     });
+  };
+
+  const markQuestionAsAsked = (questionId: string) => {
+    // Mark in notes
+    toggleQuestionAsked(questionId);
+    
+    // Send to WebSocket for answer tracking
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "mark_question",
+        questionId,
+      }));
+    }
   };
 
   const handleSuggestionAction = (suggestionId: string, action: "asked" | "dismissed") => {
@@ -459,19 +510,80 @@ export default function InterviewCockpitPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {transcript.map((entry) => (
-                      <div key={entry.id} className={`text-sm ${!entry.isFinal ? "opacity-60" : ""}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant={entry.speaker === "interviewer" ? "default" : "secondary"} className="text-xs">
-                            {entry.speaker === "interviewer" ? "You" : "Candidate"}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {format(entry.timestamp, "HH:mm:ss")}
-                          </span>
+                    {transcript.map((entry) => {
+                      const evaluation = entry.evaluation;
+                      const qualityColor = evaluation
+                        ? evaluation.quality === "strong"
+                          ? "bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400"
+                          : evaluation.quality === "moderate"
+                          ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-700 dark:text-yellow-400"
+                          : "bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-400"
+                        : "";
+                      
+                      return (
+                        <div
+                          key={entry.id}
+                          className={`text-sm rounded-lg p-3 border transition-colors ${
+                            !entry.isFinal ? "opacity-60" : ""
+                          } ${evaluation ? qualityColor : "bg-background"}`}
+                        >
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <Badge variant={entry.speaker === "interviewer" ? "default" : "secondary"} className="text-xs">
+                              {entry.speaker === "interviewer" ? "You" : "Candidate"}
+                            </Badge>
+                            {evaluation && (
+                              <>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${
+                                    evaluation.quality === "strong"
+                                      ? "border-green-500 text-green-700 dark:text-green-400"
+                                      : evaluation.quality === "moderate"
+                                      ? "border-yellow-500 text-yellow-700 dark:text-yellow-400"
+                                      : "border-red-500 text-red-700 dark:text-red-400"
+                                  }`}
+                                >
+                                  {evaluation.quality.toUpperCase()} ({evaluation.score}/5)
+                                </Badge>
+                              </>
+                            )}
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {format(new Date(entry.timestamp), "HH:mm:ss")}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground mb-2">{entry.text}</p>
+                          {evaluation && (
+                            <div className="mt-2 pt-2 border-t border-current/20">
+                              <div className="text-xs space-y-1">
+                                {evaluation.signals.strong.length > 0 && (
+                                  <div>
+                                    <span className="font-medium text-green-700 dark:text-green-400">✓ Strong signals:</span>
+                                    <ul className="list-disc list-inside ml-2 text-muted-foreground">
+                                      {evaluation.signals.strong.map((signal, idx) => (
+                                        <li key={idx}>{signal}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {evaluation.signals.weak.length > 0 && (
+                                  <div>
+                                    <span className="font-medium text-red-700 dark:text-red-400">⚠ Weak signals:</span>
+                                    <ul className="list-disc list-inside ml-2 text-muted-foreground">
+                                      {evaluation.signals.weak.map((signal, idx) => (
+                                        <li key={idx}>{signal}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {evaluation.reasoning && (
+                                  <p className="text-muted-foreground italic mt-1">{evaluation.reasoning}</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-muted-foreground">{entry.text}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                     <div ref={transcriptEndRef} />
                   </div>
                 )}
@@ -539,7 +651,7 @@ export default function InterviewCockpitPage() {
                       <div className="flex items-center gap-3 py-3">
                         <Checkbox
                           checked={isAsked}
-                          onCheckedChange={() => toggleQuestionAsked(question.id)}
+                          onCheckedChange={() => markQuestionAsAsked(question.id)}
                           data-testid={`checkbox-asked-${question.id}`}
                         />
                         <div className="flex-1 min-w-0">
