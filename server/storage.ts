@@ -44,13 +44,29 @@ export class DatabaseStorage implements IStorage {
     return created as Project;
   }
 
+  private static readonly PROJECT_UPDATE_KEYS = [
+    "title",
+    "jdText",
+    "smeNotesText",
+    "companyWebsite",
+    "interviewDuration",
+    "screeningQuestionsJson",
+    "competencyRubricJson",
+  ] as const;
+
   async updateProject(id: number, data: Partial<Project>): Promise<Project | undefined> {
+    const raw = data as Record<string, unknown>;
+    const payload: Prisma.ProjectUpdateInput = { updatedAt: new Date() };
+    if (Object.prototype.hasOwnProperty.call(raw, "title")) payload.title = raw.title as string;
+    if (Object.prototype.hasOwnProperty.call(raw, "jdText")) payload.jdText = raw.jdText as string | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "smeNotesText")) payload.smeNotesText = raw.smeNotesText as string | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "companyWebsite")) payload.companyWebsite = raw.companyWebsite as string | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "interviewDuration")) payload.interviewDuration = raw.interviewDuration as number | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "screeningQuestionsJson")) payload.screeningQuestionsJson = raw.screeningQuestionsJson as Prisma.InputJsonValue;
+    if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
     const updated = await db.project.update({
       where: { id },
-      data: {
-        ...data,
-        updatedAt: new Date(),
-      } as Prisma.ProjectUpdateInput,
+      data: payload,
     });
     return updated as Project | undefined;
   }

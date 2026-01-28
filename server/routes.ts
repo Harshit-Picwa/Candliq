@@ -82,7 +82,25 @@ export async function registerRoutes(
 
   app.patch("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
-      const project = await storage.updateProject(parseInt(req.params.id), req.body);
+      const body = { ...req.body } as Record<string, unknown>;
+      delete body.introMinutes;
+      delete body.closureMinutes;
+      const allowed = [
+        "title",
+        "jdText",
+        "smeNotesText",
+        "companyWebsite",
+        "interviewDuration",
+        "screeningQuestionsJson",
+        "competencyRubricJson",
+      ] as const;
+      const payload: Record<string, unknown> = {};
+      for (const k of allowed) {
+        if (Object.prototype.hasOwnProperty.call(body, k)) {
+          payload[k] = body[k];
+        }
+      }
+      const project = await storage.updateProject(parseInt(req.params.id), payload as any);
       if (!project) return res.status(404).json({ error: "Project not found" });
       res.json(project);
     } catch (error) {

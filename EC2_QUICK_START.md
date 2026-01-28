@@ -3,20 +3,20 @@
 ## Your EC2 Details
 - **Host**: 3.103.97.187
 - **User**: ubuntu
-- **Key**: picwa-staging.pem
+- **Key**: picwa-staging.pem (store outside this repo, e.g. in `~/.ssh/` or `%USERPROFILE%\.ssh\`)
 - **Path**: /picwa/Candliq
 
 ## Step 1: Connect to EC2
 
 ### Windows PowerShell
 ```powershell
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+ssh -i "$env:USERPROFILE\.ssh\picwa-staging.pem" ubuntu@3.103.97.187
 ```
 
 ### Linux/Mac
 ```bash
-chmod 400 picwa-staging.pem
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+chmod 400 ~/.ssh/picwa-staging.pem
+ssh -i ~/.ssh/picwa-staging.pem ubuntu@3.103.97.187
 ```
 
 ## Step 2: One-Time Setup (Run Once)
@@ -53,18 +53,18 @@ cd Candliq/Candiq-AI
 From your Windows machine:
 ```powershell
 cd C:\Users\Lenovo\Desktop\picwa\Candiq-AI\Candiq-AI
-scp -i picwa-staging.pem -r . ubuntu@3.103.97.187:/picwa/Candliq/
+scp -i "$env:USERPROFILE\.ssh\picwa-staging.pem" -r . ubuntu@3.103.97.187:/picwa/Candliq/Candiq-AI/
 ```
 
 Then on EC2:
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 ```
 
 ## Step 4: Setup Environment
 
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 
 # Create .env file
 cp .env.example .env
@@ -116,7 +116,7 @@ pm2 logs
 ## Update Application (When Needed)
 
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 git pull  # or transfer new files
 ./deploy.sh
 ```
@@ -125,10 +125,10 @@ git pull  # or transfer new files
 
 ```bash
 # Connect
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+ssh -i ~/.ssh/picwa-staging.pem ubuntu@3.103.97.187
 
 # Navigate
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 
 # Deploy
 ./deploy.sh

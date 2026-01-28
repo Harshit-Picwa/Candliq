@@ -3,24 +3,21 @@
 ## Your EC2 Details
 - **Host**: 3.103.97.187
 - **User**: ubuntu
-- **Key**: picwa-staging.pem
+- **Key**: picwa-staging.pem (store outside this repo, e.g. in `~/.ssh/` or `%USERPROFILE%\\.ssh\\`)
 - **Deployment Path**: /picwa/Candliq
 
 ## Step 1: Connect to EC2
 
 ### From Windows PowerShell
 ```powershell
-# Navigate to folder containing picwa-staging.pem
-cd C:\path\to\picwa-staging.pem\folder
-
 # Connect to EC2
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+ssh -i "$env:USERPROFILE\.ssh\picwa-staging.pem" ubuntu@3.103.97.187
 ```
 
 ### From Linux/Mac
 ```bash
-chmod 400 picwa-staging.pem
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+chmod 400 ~/.ssh/picwa-staging.pem
+ssh -i ~/.ssh/picwa-staging.pem ubuntu@3.103.97.187
 ```
 
 ## Step 2: Initial Server Setup (One-time)
@@ -68,18 +65,18 @@ From your Windows machine (PowerShell):
 cd C:\Users\Lenovo\Desktop\picwa\Candiq-AI\Candiq-AI
 
 # Transfer files to EC2
-scp -i path\to\picwa-staging.pem -r . ubuntu@3.103.97.187:/picwa/Candliq/
+scp -i "$env:USERPROFILE\.ssh\picwa-staging.pem" -r . ubuntu@3.103.97.187:/picwa/Candliq/Candiq-AI/
 ```
 
 Then on EC2:
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 ```
 
 ## Step 4: Setup Environment Variables
 
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 
 # Copy environment template
 cp .env.example .env
@@ -110,7 +107,7 @@ Save and exit: `Ctrl+X`, then `Y`, then `Enter`
 ## Step 5: Deploy Application
 
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 
 # Make deploy script executable
 chmod +x deploy.sh
@@ -130,7 +127,7 @@ The script will:
 
 ```bash
 # Copy nginx configuration
-sudo cp nginx.conf /etc/nginx/sites-available/candiq-ai
+sudo cp nginx.conf.ec2 /etc/nginx/sites-available/candiq-ai
 
 # Edit configuration
 sudo nano /etc/nginx/sites-available/candiq-ai
@@ -191,16 +188,16 @@ When you need to deploy updates:
 
 ```bash
 # Connect to EC2
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+ssh -i ~/.ssh/picwa-staging.pem ubuntu@3.103.97.187
 
 # Navigate to project
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 
 # Pull latest changes (if using Git)
 git pull
 
 # Or transfer new files using SCP, then:
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 
 # Run deployment
 ./deploy.sh
@@ -228,7 +225,7 @@ sudo nginx -t           # Test config
 
 ### Database Commands
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 npm run db:test         # Test connection
 npm run db:migrate:deploy  # Run migrations
 ```
@@ -237,7 +234,7 @@ npm run db:migrate:deploy  # Run migrations
 
 ### Application won't start
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 pm2 logs
 cat .env                # Verify environment variables
 npm run db:test        # Test database connection
@@ -247,7 +244,7 @@ npm run db:test        # Test database connection
 ```bash
 sudo lsof -i :5000
 pm2 delete all
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 ./deploy.sh
 ```
 
@@ -280,12 +277,12 @@ sudo certbot --nginx -d your-domain.com
 
 ### Connect to EC2
 ```bash
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+ssh -i ~/.ssh/picwa-staging.pem ubuntu@3.103.97.187
 ```
 
 ### Navigate to project
 ```bash
-cd /picwa/Candliq
+cd /picwa/Candliq/Candiq-AI
 ```
 
 ### Deploy/Update

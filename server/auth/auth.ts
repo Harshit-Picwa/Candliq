@@ -23,20 +23,16 @@ export function getSession() {
     tableName: "sessions",
   });
   const isProduction = process.env.NODE_ENV === "production";
+  // Use HTTPS detection: secure cookies only if explicitly using HTTPS
+  // For HTTP (like EC2 without SSL), we need secure: false
+  const useSecureCookies = process.env.USE_SECURE_COOKIES === "true" || false;
   const cookieConfig: any = {
     httpOnly: true,
-    secure: isProduction,
+    secure: useSecureCookies, // Only true if explicitly enabled (requires HTTPS)
     maxAge: sessionTtl,
     path: "/",
+    sameSite: useSecureCookies ? "none" : "lax", // 'lax' works with HTTP, 'none' requires HTTPS
   };
-  
-  // For production, use 'none' with secure. For development, omit sameSite
-  // to allow cookies on all same-origin requests including POST
-  if (isProduction) {
-    cookieConfig.sameSite = "none";
-  }
-  // In development, not setting sameSite allows the browser to use its default
-  // which typically works better for programmatic requests on localhost
   
   return session({
     secret: sessionSecret,
@@ -286,9 +282,18 @@ export async function setupAuth(app: Express) {
         },
         (err) => {
           if (err) {
+            console.error("[signup] Error during login:", err);
             return res.status(500).json({ error: "Account created but failed to log in" });
           }
-          return res.json({ success: true, user });
+          // Explicitly save the session to ensure it's persisted
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error("[signup] Error saving session:", saveErr);
+              return res.status(500).json({ error: "Account created but failed to save session" });
+            }
+            console.log("[signup] Session saved successfully for user:", user.id);
+            return res.json({ success: true, user });
+          });
         }
       );
     } catch (error: any) {

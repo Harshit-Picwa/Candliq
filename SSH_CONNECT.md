@@ -17,21 +17,21 @@ Then press Enter.
 ## Full Connection Command
 
 ```bash
-ssh -i picwa-staging.pem ubuntu@3.103.97.187
+ssh -i ~/.ssh/picwa-staging.pem ubuntu@3.103.97.187
 ```
 
 When prompted, type: `yes`
 
 ## If Connection Still Fails
 
-1. Make sure the PEM file is in the current directory, or use full path:
+1. Make sure the PEM file is **not stored inside this repo**. Put it somewhere like `~/.ssh/` (Linux/Mac) or `%USERPROFILE%\.ssh\` (Windows), then use a full path:
    ```bash
    ssh -i /full/path/to/picwa-staging.pem ubuntu@3.103.97.187
    ```
 
 2. Check file permissions (on Linux/Mac):
    ```bash
-   chmod 400 picwa-staging.pem
+   chmod 400 ~/.ssh/picwa-staging.pem
    ```
 
 3. On Windows, if you get permission errors:

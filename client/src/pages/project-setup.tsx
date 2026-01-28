@@ -50,7 +50,8 @@ export default function ProjectSetupPage() {
 
   const updateProject = useMutation({
     mutationFn: async (data: Partial<Project>) => {
-      return apiRequest("PATCH", `/api/projects/${id}`, data);
+      const { introMinutes: _i, closureMinutes: _c, ...rest } = data as Record<string, unknown>;
+      return apiRequest("PATCH", `/api/projects/${id}`, rest);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
@@ -152,8 +153,6 @@ export default function ProjectSetupPage() {
       smeNotesText: smeNotes,
       companyWebsite: companyWebsite || undefined,
       interviewDuration: interviewDuration || undefined,
-      introMinutes: introMinutes ?? undefined,
-      closureMinutes: closureMinutes ?? undefined,
     } as any);
   };
 
@@ -171,8 +170,6 @@ export default function ProjectSetupPage() {
         smeNotesText: smeNotes,
         companyWebsite: companyWebsite || undefined,
         interviewDuration: interviewDuration || undefined,
-        introMinutes: introMinutes ?? undefined,
-        closureMinutes: closureMinutes ?? undefined,
       } as any);
       
       // Wait a moment for the database to update
