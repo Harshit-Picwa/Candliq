@@ -93,15 +93,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createInterview(interview: InsertInterview): Promise<Interview> {
+    const transcriptJson =
+      interview.transcriptJson === null
+        ? Prisma.JsonNull
+        : interview.transcriptJson === undefined
+        ? undefined
+        : (interview.transcriptJson as unknown as Prisma.InputJsonValue);
+    const reportJson =
+      interview.reportJson === null
+        ? Prisma.JsonNull
+        : interview.reportJson === undefined
+        ? undefined
+        : (interview.reportJson as unknown as Prisma.InputJsonValue);
+    const notesJson =
+      interview.notesJson === null
+        ? Prisma.JsonNull
+        : interview.notesJson === undefined
+        ? undefined
+        : (interview.notesJson as unknown as Prisma.InputJsonValue);
     const created = await db.interview.create({
       data: {
         project: { connect: { id: interview.projectId } },
         candidateName: interview.candidateName,
         candidateEmail: interview.candidateEmail ?? undefined,
         resumeText: interview.resumeText ?? undefined,
-        transcriptJson: interview.transcriptJson ?? undefined,
-        reportJson: interview.reportJson ?? undefined,
-        notesJson: interview.notesJson ?? undefined,
+        transcriptJson,
+        reportJson,
+        notesJson,
         status: interview.status ?? "draft",
         consentGiven: interview.consentGiven ?? false,
       },

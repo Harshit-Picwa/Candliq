@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { Blob } from "buffer";
+import { toFile } from "openai/uploads";
 import type { TranscriptEntry } from "@shared/schema";
 
 const openai = new OpenAI({
@@ -8,8 +8,9 @@ const openai = new OpenAI({
 });
 
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  const blob = new Blob([new Uint8Array(audioBuffer)], { type: "audio/webm" });
-  const file = new File([blob], "audio.webm", { type: "audio/webm" });
+  const file = await toFile(audioBuffer, "audio.webm", {
+    type: "audio/webm",
+  });
   
   try {
     const response = await openai.audio.transcriptions.create({
