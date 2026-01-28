@@ -2,8 +2,12 @@
 
 # EC2 Deployment Script for Candiq-AI
 # This script automates the deployment process on EC2
+# Run from project root: ./deploy.sh
 
 set -e  # Exit on error
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 echo "🚀 Starting Candiq-AI deployment..."
 

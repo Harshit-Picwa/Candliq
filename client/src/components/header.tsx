@@ -23,14 +23,14 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="flex h-16 items-center justify-between gap-4 px-6">
         <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <Briefcase className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="text-xl font-semibold tracking-tight">Candiq.AI</span>
+            <span className="text-xl font-bold tracking-tight">Candiq.AI</span>
           </Link>
           
           {isAuthenticated && (

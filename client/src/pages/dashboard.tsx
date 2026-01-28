@@ -100,19 +100,19 @@ export default function DashboardPage() {
 
   return (
     <DesktopOnlyGuard>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen page-gradient">
         <Header />
         <main className="max-w-7xl mx-auto px-8 py-12">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between mb-10">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
-              <p className="text-muted-foreground mt-1">
+              <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
+              <p className="text-muted-foreground mt-1.5 text-base">
                 Manage your interview projects and candidates
               </p>
             </div>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button data-testid="button-create-project">
+                <Button className="shadow-md hover:shadow-lg transition-shadow" data-testid="button-create-project">
                   <Plus className="w-4 h-4 mr-2" />
                   New Project
                 </Button>
@@ -166,15 +166,15 @@ export default function DashboardPage() {
           ) : projects && projects.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {projects.map((project) => (
-                <Card key={project.id} className="group hover-elevate" data-testid={`card-project-${project.id}`}>
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <Card key={project.id} className="group card-elevated rounded-2xl border-card-border/80 overflow-hidden" data-testid={`card-project-${project.id}`}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-4 pb-4">
                     <div className="flex-1 min-w-0">
                       <Link href={`/projects/${project.id}`}>
-                        <CardTitle className="text-lg hover:text-primary cursor-pointer truncate">
+                        <CardTitle className="text-lg font-semibold hover:text-primary cursor-pointer truncate transition-colors">
                           {project.title}
                         </CardTitle>
                       </Link>
-                      <CardDescription className="mt-1">
+                      <CardDescription className="mt-1.5">
                         Created {format(new Date(project.createdAt), "MMM d, yyyy")}
                       </CardDescription>
                     </div>
@@ -196,14 +196,14 @@ export default function DashboardPage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <FileText className="w-4 h-4" />
+                  <CardContent className="pt-0">
+                    <div className="flex items-center gap-5 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
+                        <FileText className="w-3.5 h-3.5" />
                         <span>{project.jdText ? "JD added" : "No JD"}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Users className="w-4 h-4" />
+                      <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
+                        <Users className="w-3.5 h-3.5" />
                         <span>{(project.screeningQuestionsJson?.length || 0)} questions</span>
                       </div>
                     </div>
@@ -212,16 +212,16 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <Card className="p-12">
-              <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <Briefcase className="w-8 h-8 text-primary" />
+            <Card className="rounded-2xl border-card-border/80 overflow-hidden card-elevated p-16">
+              <div className="text-center max-w-md mx-auto">
+                <div className="mx-auto w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 ring-2 ring-primary/10">
+                  <Briefcase className="w-10 h-10 text-primary" />
                 </div>
-                <h3 className="text-lg font-medium mb-2">No projects yet</h3>
-                <p className="text-muted-foreground mb-6">
-                  Create your first project to start interviewing candidates
+                <h3 className="text-xl font-semibold mb-2">No projects yet</h3>
+                <p className="text-muted-foreground mb-8 leading-relaxed">
+                  Create your first project to start building screening questions and interviewing candidates.
                 </p>
-                <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-project">
+                <Button className="shadow-md hover:shadow-lg transition-shadow" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-project">
                   <Plus className="w-4 h-4 mr-2" />
                   Create Project
                 </Button>

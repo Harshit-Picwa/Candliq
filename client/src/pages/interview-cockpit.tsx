@@ -660,7 +660,7 @@ export default function InterviewCockpitPage() {
                           </p>
                         </div>
                         <Badge variant={question.isMandatory ? "default" : "outline"} className="shrink-0 text-xs">
-                          {question.isMandatory ? "Must Ask" : "Optional"}
+                          {question.isMandatory ? "Included" : "Not included"}
                         </Badge>
                         <Badge variant="secondary" className="shrink-0 text-xs">
                           {getCompetencyName(question.competencyId)}

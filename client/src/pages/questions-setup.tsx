@@ -8,13 +8,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Header } from "@/components/header";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
-import { ArrowLeft, GripVertical, Plus, Trash2, CheckCircle, AlertCircle, Loader2, RefreshCw, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
+import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -42,11 +42,13 @@ export default function QuestionsSetupPage() {
   const [questions, setQuestions] = useState<ScreeningQuestion[]>([]);
   const [competencies, setCompetencies] = useState<Competency[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
-  const [showRepromptDialog, setShowRepromptDialog] = useState(false);
+  const [showRefineDialog, setShowRefineDialog] = useState(false);
   const [customInstructions, setCustomInstructions] = useState("");
   const [editedQuestionIds, setEditedQuestionIds] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
   const [invalidQuestionIds, setInvalidQuestionIds] = useState<Set<string>>(new Set());
+  const [step, setStep] = useState<"edit" | "review">("edit");
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (project) {
@@ -54,17 +56,12 @@ export default function QuestionsSetupPage() {
       const loadedCompetencies = project.competencyRubricJson || [];
       setQuestions(loadedQuestions);
       setCompetencies(loadedCompetencies);
-      
-      // Validate all questions on load
+      setSelectedQuestionId(null);
       const invalid = new Set<string>();
       loadedQuestions.forEach(q => {
-        if (!q.question.trim()) {
-          invalid.add(q.id);
-        }
+        if (!q.question.trim()) invalid.add(q.id);
       });
       setInvalidQuestionIds(invalid);
-      
-      // Reset edited questions on load (only track new edits)
       setEditedQuestionIds(new Set());
     }
   }, [project]);
@@ -99,7 +96,7 @@ export default function QuestionsSetupPage() {
     },
   });
 
-  const repromptQuestions = useMutation({
+  const refineQuestions = useMutation({
     mutationFn: async (instructions: string) => {
       return apiRequest("POST", `/api/projects/${id}/regenerate-questions`, {
         customInstructions: instructions,
@@ -107,12 +104,12 @@ export default function QuestionsSetupPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
-      setShowRepromptDialog(false);
+      setShowRefineDialog(false);
       setCustomInstructions("");
-      toast({ title: "Questions regenerated", description: "New questions have been generated with your custom instructions." });
+      toast({ title: "Questions refined", description: "New questions have been generated with your custom instructions." });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to regenerate questions.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to refine questions.", variant: "destructive" });
     },
   });
 
@@ -196,16 +193,6 @@ export default function QuestionsSetupPage() {
   }));
 
   const questionCount = questions.length;
-  // Phase 1 requirement: 10-15 questions total
-  const projectDuration = (project as any)?.interviewDuration || 30;
-  const minQuestions = 10; // Phase 1 requirement
-  const maxQuestions = 15; // Phase 1 requirement
-  const isValidQuestionCount = questionCount >= minQuestions && questionCount <= maxQuestions;
-  const questionCountColor = isValidQuestionCount 
-    ? "text-green-600" 
-    : questionCount < minQuestions 
-    ? "text-amber-600" 
-    : "text-red-600";
 
   const validateAllQuestions = (): boolean => {
     const invalid = questions.filter(q => !q.question.trim());
@@ -222,19 +209,9 @@ export default function QuestionsSetupPage() {
   };
 
   const handleApprove = () => {
-    if (!isValidQuestionCount) {
-      toast({ 
-        title: "Invalid question count", 
-        description: `Please ensure you have ${minQuestions}-${maxQuestions} questions. Currently: ${questionCount}`, 
-        variant: "destructive" 
-      });
-      return;
-    }
-    
     if (!validateAllQuestions()) {
       return;
     }
-    
     setApproved(true);
     toast({ title: "Questions approved", description: "Questions have been finalized." });
   };
@@ -246,15 +223,25 @@ export default function QuestionsSetupPage() {
     saveQuestions.mutate();
   };
 
+  const handleContinueToReview = () => {
+    if (!validateAllQuestions()) return;
+    setStep("review");
+    setSelectedQuestionId(null);
+  };
+
+  const selectedQuestion = selectedQuestionId
+    ? questions.find((q) => q.id === selectedQuestionId)
+    : null;
+
   if (isLoading) {
     return (
       <DesktopOnlyGuard>
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen page-gradient">
           <Header />
-          <main className="max-w-4xl mx-auto px-8 py-12">
-            <Skeleton className="h-8 w-64 mb-8" />
+          <main className="max-w-6xl mx-auto px-8 py-12">
+            <Skeleton className="h-8 w-64 mb-8 rounded-lg" />
             <div className="space-y-4">
-              {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
             </div>
           </main>
         </div>
@@ -264,9 +251,9 @@ export default function QuestionsSetupPage() {
 
   return (
     <DesktopOnlyGuard>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen page-gradient">
         <Header />
-        <main className="max-w-4xl mx-auto px-8 py-12">
+        <main className="max-w-6xl mx-auto px-8 py-12">
           <div className="flex items-center gap-4 mb-6">
             <Button variant="ghost" size="icon" asChild>
               <Link href={`/projects/${id}`}>
@@ -274,150 +261,174 @@ export default function QuestionsSetupPage() {
               </Link>
             </Button>
             <div className="flex-1">
-              <h1 className="text-2xl font-semibold">{project?.title}</h1>
-              <div className="flex items-center gap-3">
-                <p className="text-muted-foreground">Screening Questions</p>
-                <Badge 
-                  variant={isValidQuestionCount ? "default" : "destructive"} 
-                  className={questionCountColor}
-                >
-                  {questionCount} / {minQuestions}-{maxQuestions} questions
+              <h1 className="text-2xl font-bold tracking-tight">{project?.title}</h1>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-muted-foreground text-sm">Screening Questions</p>
+                <Badge variant="secondary" className="font-medium">
+                  {questionCount} question{questionCount !== 1 ? "s" : ""}
                 </Badge>
                 {approved && (
-                  <Badge variant="outline" className="gap-1">
+                  <Badge variant="outline" className="gap-1 ring-1 ring-primary/20">
                     <ShieldCheck className="w-3 h-3" />
                     Approved
                   </Badge>
                 )}
               </div>
             </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <Dialog open={showRepromptDialog} onOpenChange={setShowRepromptDialog}>
-                      <DialogTrigger asChild>
-                        <Button 
-                          variant="outline" 
-                          className="gap-2" 
-                          data-testid="button-reprompt"
-                          disabled={!project?.jdText}
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                          Re-Prompt
-                        </Button>
-                      </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Re-Prompt Questions</DialogTitle>
-                  <DialogDescription>
-                    Provide custom instructions to refine how questions are generated. This will replace all current questions.
-                  </DialogDescription>
-                </DialogHeader>
-                {!project?.jdText ? (
-                  <div className="py-4">
-                    <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
-                      <AlertCircle className="w-4 h-4" />
-                      <p className="text-sm font-medium">Job description required</p>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Please add a job description in the Setup page before regenerating questions.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-4 py-4">
+            {step === "edit" && (
+              <>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <div>
-                        <label htmlFor="custom-instructions" className="text-sm font-medium mb-2 block">
-                          Custom Instructions
-                        </label>
-                        <Textarea
-                          id="custom-instructions"
-                          value={customInstructions}
-                          onChange={(e) => setCustomInstructions(e.target.value)}
-                          placeholder="E.g., 'Make questions more technical', 'Focus on culture fit', 'Add questions about system design', 'Make questions harder'"
-                          className="min-h-[120px]"
-                          maxLength={500}
-                        />
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {customInstructions.length}/500 characters
-                        </p>
+                        <Dialog open={showRefineDialog} onOpenChange={setShowRefineDialog}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="gap-2"
+                              data-testid="button-refine-questions"
+                              disabled={!project?.jdText}
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                              Refine questions
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Refine questions</DialogTitle>
+                              <DialogDescription>
+                                Provide custom instructions to refine how questions are generated. This will replace all current questions.
+                              </DialogDescription>
+                            </DialogHeader>
+                            {!project?.jdText ? (
+                              <div className="py-4">
+                                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <p className="text-sm font-medium">Job description required</p>
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-2">
+                                  Please add a job description in the Setup page before refining questions.
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="space-y-4 py-4">
+                                  <div>
+                                    <label htmlFor="custom-instructions" className="text-sm font-medium mb-2 block">
+                                      Custom Instructions
+                                    </label>
+                                    <Textarea
+                                      id="custom-instructions"
+                                      value={customInstructions}
+                                      onChange={(e) => setCustomInstructions(e.target.value)}
+                                      placeholder="E.g., 'Make questions more technical', 'Focus on culture fit', 'Add questions about system design', 'Make questions harder'"
+                                      className="min-h-[120px]"
+                                      maxLength={500}
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                      {customInstructions.length}/500 characters
+                                    </p>
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">
+                                    <p className="font-medium mb-1">Examples:</p>
+                                    <ul className="list-disc list-inside space-y-1 ml-2">
+                                      <li>Make questions more technical and specific</li>
+                                      <li>Focus on culture fit and collaboration</li>
+                                      <li>Add questions about system design</li>
+                                      <li>Make questions harder/easier</li>
+                                    </ul>
+                                  </div>
+                                </div>
+                                <DialogFooter>
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                      setShowRefineDialog(false);
+                                      setCustomInstructions("");
+                                    }}
+                                    disabled={refineQuestions.isPending}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    onClick={() => refineQuestions.mutate(customInstructions.trim())}
+                                    disabled={refineQuestions.isPending}
+                                  >
+                                    {refineQuestions.isPending ? (
+                                      <>
+                                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                        Refining...
+                                      </>
+                                    ) : (
+                                      "Refine questions"
+                                    )}
+                                  </Button>
+                                </DialogFooter>
+                              </>
+                            )}
+                          </DialogContent>
+                        </Dialog>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        <p className="font-medium mb-1">Examples:</p>
-                        <ul className="list-disc list-inside space-y-1 ml-2">
-                          <li>Make questions more technical and specific</li>
-                          <li>Focus on culture fit and collaboration</li>
-                          <li>Add questions about system design</li>
-                          <li>Make questions harder/easier</li>
-                        </ul>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setShowRepromptDialog(false);
-                          setCustomInstructions("");
-                        }}
-                        disabled={repromptQuestions.isPending}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={() => repromptQuestions.mutate(customInstructions.trim())}
-                        disabled={repromptQuestions.isPending}
-                      >
-                        {repromptQuestions.isPending ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            Regenerating...
-                          </>
-                        ) : (
-                          "Re-Prompt"
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </>
-                )}
-              </DialogContent>
-            </Dialog>
-                  </div>
-                </TooltipTrigger>
-                {!project?.jdText && (
-                  <TooltipContent>
-                    <p>Job description is required to regenerate questions</p>
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
-            <Button
-              onClick={handleApprove}
-              disabled={approved || !isValidQuestionCount}
-              variant={approved ? "outline" : "default"}
-              className="gap-2"
-              data-testid="button-approve-questions"
-            >
-              {approved ? (
-                <>
-                  <ShieldCheck className="w-4 h-4" />
-                  Approved
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="w-4 h-4" />
-                  Approve Questions
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
-              variant="outline"
-              data-testid="button-save-questions"
-            >
-              {saveQuestions.isPending ? "Saving..." : "Save Changes"}
-            </Button>
+                    </TooltipTrigger>
+                    {!project?.jdText && (
+                      <TooltipContent>
+                        <p>Job description is required to refine questions</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+                <Button
+                  onClick={handleContinueToReview}
+                  disabled={questionCount === 0 || invalidQuestionIds.size > 0}
+                  variant="outline"
+                  className="gap-2 shadow-sm"
+                  data-testid="button-review-approve"
+                >
+                  Review & Approve
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
+                  variant="outline"
+                  data-testid="button-save-questions"
+                >
+                  {saveQuestions.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </>
+            )}
+            {step === "review" && (
+              <>
+                <Button
+                  onClick={() => setStep("edit")}
+                  variant="outline"
+                  className="gap-2"
+                  data-testid="button-back-to-edit"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back to edit
+                </Button>
+                <Button
+                  onClick={handleApprove}
+                  disabled={approved || questionCount === 0 || invalidQuestionIds.size > 0}
+                  variant={approved ? "outline" : "default"}
+                  className="gap-2 shadow-md hover:shadow-lg transition-shadow"
+                  data-testid="button-approve-questions"
+                >
+                  {approved ? (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      Approved
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      Approve
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
           </div>
 
           <div className="flex gap-2 mb-8">
@@ -432,20 +443,8 @@ export default function QuestionsSetupPage() {
             </Link>
           </div>
 
-          {(!isValidQuestionCount && questionCount > 0) && (
-            <Card className="mb-6 border-amber-500/50 bg-amber-500/5">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-amber-600">
-                  <AlertCircle className="w-4 h-4" />
-                  <p className="text-sm font-medium">
-                    Question count is {questionCount}. Please ensure you have {minQuestions}-{maxQuestions} questions.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
           {invalidQuestionIds.size > 0 && (
-            <Card className="mb-6 border-destructive/50 bg-destructive/5">
+            <Card className="mb-6 rounded-xl border-destructive/50 bg-destructive/5">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-destructive">
                   <AlertCircle className="w-4 h-4" />
@@ -457,24 +456,24 @@ export default function QuestionsSetupPage() {
             </Card>
           )}
           {questions.length === 0 ? (
-            <Card className="p-12">
-              <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                  <AlertCircle className="w-8 h-8 text-muted-foreground" />
+            <Card className="rounded-2xl border-card-border/80 card-elevated p-16">
+              <div className="text-center max-w-md mx-auto">
+                <div className="mx-auto w-20 h-20 rounded-2xl bg-muted flex items-center justify-center mb-6 ring-2 ring-border/50">
+                  <AlertCircle className="w-10 h-10 text-muted-foreground" />
                 </div>
-                <h3 className="text-lg font-medium mb-2">No questions yet</h3>
-                <p className="text-muted-foreground mb-6">
-                  Add a job description and generate questions to get started
+                <h3 className="text-xl font-semibold mb-2">No questions yet</h3>
+                <p className="text-muted-foreground mb-8 leading-relaxed">
+                  Add a job description and generate questions to get started.
                 </p>
-                <Button asChild>
+                <Button asChild className="shadow-sm">
                   <Link href={`/projects/${id}`}>Go to Setup</Link>
                 </Button>
               </div>
             </Card>
-          ) : (
+          ) : step === "review" ? (
             <div className="space-y-6">
               {groupedQuestions.map(({ competency, questions: compQuestions }) => (
-                <Card key={competency.id}>
+                <Card key={competency.id} className="rounded-2xl border-card-border/80 overflow-hidden">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Badge variant="secondary">{compQuestions.length}</Badge>
@@ -482,61 +481,131 @@ export default function QuestionsSetupPage() {
                     </CardTitle>
                     <CardDescription>{competency.description}</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <Accordion type="multiple" className="space-y-2">
-                      {compQuestions.map((question, idx) => (
-                        <AccordionItem
-                          key={question.id}
-                          value={question.id}
-                          className="border rounded-lg px-4"
-                          data-testid={`question-item-${question.id}`}
-                        >
-                          <div className={`flex items-center gap-3 py-3 ${invalidQuestionIds.has(question.id) ? "bg-destructive/5 border-l-2 border-l-destructive" : ""}`}>
-                            <div className="flex flex-col gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 p-0"
-                                onClick={() => moveQuestion(question.id, "up")}
-                                disabled={idx === 0 || approved}
-                                data-testid={`button-move-up-${question.id}`}
-                              >
-                                <ArrowUp className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 p-0"
-                                onClick={() => moveQuestion(question.id, "down")}
-                                disabled={idx === compQuestions.length - 1 || approved}
-                                data-testid={`button-move-down-${question.id}`}
-                              >
-                                <ArrowDown className="w-3 h-3" />
-                              </Button>
+                  <CardContent className="space-y-6">
+                    {compQuestions.map((q) => (
+                      <div key={q.id} className="rounded-xl border border-border/80 bg-muted/20 p-5 space-y-4">
+                        <p className="font-medium text-sm leading-snug">{q.question}</p>
+                        <div className="pl-0 space-y-3">
+                          <h4 className="text-sm font-semibold">Expected answers</h4>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Typical reasoning</p>
+                            <p className="text-sm">{q.rubric.typicalReasoning || "—"}</p>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3 text-green-500" /> Strong signals
+                              </p>
+                              <ul className="text-sm space-y-0.5">
+                                {q.rubric.strongSignals?.map((s, i) => (
+                                  <li key={i}>• {s}</li>
+                                ))}
+                                {(!q.rubric.strongSignals || q.rubric.strongSignals.length === 0) && (
+                                  <li className="text-muted-foreground">—</li>
+                                )}
+                              </ul>
                             </div>
-                            <Checkbox
-                              checked={question.isMandatory}
-                              onCheckedChange={() => toggleMandatory(question.id)}
-                              data-testid={`checkbox-mandatory-${question.id}`}
-                              disabled={approved}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Input
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3 text-amber-500" /> Weak signals
+                              </p>
+                              <ul className="text-sm space-y-0.5">
+                                {q.rubric.weakSignals?.map((s, i) => (
+                                  <li key={i}>• {s}</li>
+                                ))}
+                                {(!q.rubric.weakSignals || q.rubric.weakSignals.length === 0) && (
+                                  <li className="text-muted-foreground">—</li>
+                                )}
+                              </ul>
+                            </div>
+                          </div>
+                          {q.rubric.notes && (
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">Notes</p>
+                              <p className="text-sm">{q.rubric.notes}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[480px]">
+              <ScrollArea className="h-[520px] pr-4">
+                <div className="space-y-6">
+                  {groupedQuestions.map(({ competency, questions: compQuestions }) => (
+                    <div key={competency.id}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <Badge variant="secondary" className="font-medium">{compQuestions.length}</Badge>
+                        <span className="font-semibold text-sm">{competency.name}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {compQuestions.map((question, idx) => (
+                          <div
+                            key={question.id}
+                            data-testid={`question-item-${question.id}`}
+                            onClick={() => setSelectedQuestionId(question.id)}
+                            className={`rounded-xl border p-3 cursor-pointer transition-all ${
+                              selectedQuestionId === question.id
+                                ? "ring-2 ring-primary border-primary shadow-md bg-primary/5"
+                                : "hover:bg-muted/50 hover:border-muted-foreground/20"
+                            } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : "border-border/80"}`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="flex flex-col gap-0.5 shrink-0">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveQuestion(question.id, "up");
+                                  }}
+                                  disabled={idx === 0}
+                                  data-testid={`button-move-up-${question.id}`}
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveQuestion(question.id, "down");
+                                  }}
+                                  disabled={idx === compQuestions.length - 1}
+                                  data-testid={`button-move-down-${question.id}`}
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </Button>
+                              </div>
+                              <Checkbox
+                                checked={question.isMandatory}
+                                onCheckedChange={() => toggleMandatory(question.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid={`checkbox-included-${question.id}`}
+                                aria-label={question.isMandatory ? "Included" : "Not included"}
+                              />
+                              <div className="flex-1 min-w-0 space-y-1">
+                                <Textarea
                                   value={question.question}
                                   onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
-                                  className={`border-none p-0 h-auto text-sm focus-visible:ring-0 ${
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={`min-h-[60px] resize-none text-sm border-none p-0 focus-visible:ring-0 bg-transparent ${
                                     invalidQuestionIds.has(question.id) ? "text-destructive" : ""
                                   }`}
                                   data-testid={`input-question-${question.id}`}
-                                  disabled={approved}
                                   placeholder="Enter question text..."
                                 />
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 flex-wrap">
                                   {!editedQuestionIds.has(question.id) && (
                                     <Badge variant="outline" className="gap-1 text-xs">
                                       <Sparkles className="w-3 h-3" />
-                                      AI Generated
+                                      AI
                                     </Badge>
                                   )}
                                   {editedQuestionIds.has(question.id) && (
@@ -545,77 +614,90 @@ export default function QuestionsSetupPage() {
                                       Edited
                                     </Badge>
                                   )}
-                                  {invalidQuestionIds.has(question.id) && (
-                                    <Badge variant="destructive" className="gap-1 text-xs">
-                                      <AlertCircle className="w-3 h-3" />
-                                      Invalid
-                                    </Badge>
-                                  )}
+                                  <Badge variant={question.isMandatory ? "default" : "outline"} className="text-xs">
+                                    {question.isMandatory ? "Included" : "Not included"}
+                                  </Badge>
                                 </div>
+                                {invalidQuestionIds.has(question.id) && (
+                                  <p className="text-xs text-destructive">Question text cannot be empty</p>
+                                )}
                               </div>
-                              {invalidQuestionIds.has(question.id) && (
-                                <p className="text-xs text-destructive mt-1">Question text cannot be empty</p>
-                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="shrink-0 h-8 w-8"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteQuestion(question.id);
+                                }}
+                                data-testid={`button-delete-question-${question.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-muted-foreground" />
+                              </Button>
                             </div>
-                            <Badge variant={question.isMandatory ? "default" : "outline"} className="shrink-0">
-                              {question.isMandatory ? "Mandatory" : "Optional"}
-                            </Badge>
-                            <AccordionTrigger className="py-0 hover:no-underline" />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="shrink-0"
-                              onClick={() => deleteQuestion(question.id)}
-                              disabled={approved}
-                              data-testid={`button-delete-question-${question.id}`}
-                            >
-                              <Trash2 className="w-4 h-4 text-muted-foreground" />
-                            </Button>
                           </div>
-                          <AccordionContent className="pt-0 pb-4">
-                            <div className="pl-10 space-y-4">
-                              <div>
-                                <h4 className="text-sm font-medium mb-2">Typical Reasoning</h4>
-                                <p className="text-sm text-muted-foreground">{question.rubric.typicalReasoning}</p>
-                              </div>
-                              <div className="grid sm:grid-cols-2 gap-4">
-                                <div>
-                                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                                    <CheckCircle className="w-4 h-4 text-green-500" />
-                                    Strong Signals
-                                  </h4>
-                                  <ul className="text-sm text-muted-foreground space-y-1">
-                                    {question.rubric.strongSignals.map((s, i) => (
-                                      <li key={i}>• {s}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                                <div>
-                                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4 text-amber-500" />
-                                    Weak Signals
-                                  </h4>
-                                  <ul className="text-sm text-muted-foreground space-y-1">
-                                    {question.rubric.weakSignals.map((s, i) => (
-                                      <li key={i}>• {s}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                              {question.rubric.notes && (
-                                <div>
-                                  <h4 className="text-sm font-medium mb-2">Notes</h4>
-                                  <p className="text-sm text-muted-foreground">{question.rubric.notes}</p>
-                                </div>
-                              )}
-                            </div>
-                          </AccordionContent>
-                        </AccordionItem>
-                      ))}
-                    </Accordion>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+              <Card className="lg:sticky lg:top-4 h-fit rounded-2xl border-card-border/80 shadow-sm overflow-hidden">
+                <CardHeader className="bg-muted/30 border-b border-border/50">
+                  <CardTitle className="text-base font-semibold">Expected answers</CardTitle>
+                  <CardDescription>
+                    {selectedQuestion
+                      ? "Rubric for the selected question"
+                      : "Select a question to view expected answers"}
+                  </CardDescription>
+                </CardHeader>
+                {selectedQuestion && (
+                  <CardContent className="space-y-4 pt-5">
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Typical reasoning</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedQuestion.rubric.typicalReasoning || "—"}
+                      </p>
+                    </div>
+                    <div className="grid sm:grid-cols-1 gap-4">
+                      <div>
+                        <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          Strong signals
+                        </h4>
+                        <ul className="text-sm text-muted-foreground space-y-1">
+                          {selectedQuestion.rubric.strongSignals?.map((s, i) => (
+                            <li key={i}>• {s}</li>
+                          ))}
+                          {(!selectedQuestion.rubric.strongSignals || selectedQuestion.rubric.strongSignals.length === 0) && (
+                            <li>—</li>
+                          )}
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-500" />
+                          Weak signals
+                        </h4>
+                        <ul className="text-sm text-muted-foreground space-y-1">
+                          {selectedQuestion.rubric.weakSignals?.map((s, i) => (
+                            <li key={i}>• {s}</li>
+                          ))}
+                          {(!selectedQuestion.rubric.weakSignals || selectedQuestion.rubric.weakSignals.length === 0) && (
+                            <li>—</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                    {selectedQuestion.rubric.notes && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Notes</h4>
+                        <p className="text-sm text-muted-foreground">{selectedQuestion.rubric.notes}</p>
+                      </div>
+                    )}
                   </CardContent>
-                </Card>
-              ))}
+                )}
+              </Card>
             </div>
           )}
         </main>

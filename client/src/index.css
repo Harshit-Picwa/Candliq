@@ -43,8 +43,8 @@
   --chart-3: 165 68% 35%;
   --chart-4: 280 65% 48%;
   --chart-5: 340 70% 45%;
-  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-serif: Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: "Libre Baskerville", Georgia, serif;
   --font-mono: "JetBrains Mono", Menlo, monospace;
   --radius: .5rem;
   --shadow-2xs: 0px 2px 0px 0px hsl(220 15% 12% / 0.00);
@@ -173,6 +173,44 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+}
+
+/* Subtle page gradient – use on main content wrapper */
+.page-gradient {
+  background: linear-gradient(
+    180deg,
+    hsl(var(--primary) / 0.04) 0%,
+    hsl(var(--background)) 18%,
+    hsl(var(--background)) 100%
+  );
+}
+
+.dark .page-gradient {
+  background: linear-gradient(
+    180deg,
+    hsl(var(--primary) / 0.08) 0%,
+    hsl(var(--background)) 20%,
+    hsl(var(--background)) 100%
+  );
+}
+
+/* Elevated card – slightly stronger shadow, hover lift */
+.card-elevated {
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.06), 0 4px 12px hsl(var(--foreground) / 0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card-elevated:hover {
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.08), 0 12px 24px hsl(var(--foreground) / 0.06);
+  transform: translateY(-1px);
+}
+
+.dark .card-elevated {
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.08), 0 4px 12px hsl(var(--foreground) / 0.06);
+}
+
+.dark .card-elevated:hover {
+  box-shadow: 0 4px 12px hsl(var(--foreground) / 0.12), 0 12px 24px hsl(var(--foreground) / 0.1);
 }
 
 /**

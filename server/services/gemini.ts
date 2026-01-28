@@ -18,14 +18,12 @@ export async function extractCompetenciesAndQuestions(
   companyWebsite?: string,
   interviewDuration?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[] }> {
-  // Calculate target question count based on interview duration
-  // Default: 12 questions for 30 minutes, scale up/down proportionally
-  // Range: 10-15 questions (Phase 1 requirement)
-  let targetQuestionCount = 12; // Default for 30 minutes
+  // Calculate target question count from questions duration (skill-set only). No min/max.
+  // 10 min -> ~4, 15 -> ~6, 20 -> ~7, 30 -> ~9, 45 -> ~12
+  let targetQuestionCount = 9;
   if (interviewDuration) {
-    // Scale: 30 min = 12 questions, 15 min = 10 questions, 45 min = 15 questions
-    targetQuestionCount = Math.round(10 + (interviewDuration - 15) * (5 / 30));
-    targetQuestionCount = Math.max(10, Math.min(15, targetQuestionCount)); // Clamp to 10-15
+    const scale: Record<number, number> = { 10: 4, 15: 6, 20: 7, 30: 9, 45: 12 };
+    targetQuestionCount = scale[interviewDuration] ?? Math.max(4, Math.round(interviewDuration / 5));
   }
 
   const prompt = `You are an expert HR consultant and interview coach. Analyze the following job description and extract key competencies, then generate screening interview questions for each competency.
@@ -99,15 +97,7 @@ Only output valid JSON. No markdown code blocks.`;
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-    
-    // Validate question count (Phase 1 requirement: 10-15 questions)
-    const questionCount = parsed.questions?.length || 0;
-    const expectedMin = interviewDuration ? Math.max(10, targetQuestionCount - 2) : 10;
-    const expectedMax = interviewDuration ? Math.min(15, targetQuestionCount + 2) : 15;
-    if (questionCount < expectedMin || questionCount > expectedMax) {
-      console.warn(`[gemini] Warning: Generated ${questionCount} questions, expected ${expectedMin}-${expectedMax}`);
-    }
-    
+
     const competencies = (parsed.competencies || []).map((c: any, idx: number) => ({
       id: c.id || `comp_${generateId()}`,
       name: c.name,

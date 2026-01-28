@@ -67,3 +67,30 @@ Check the server console for these log messages:
 - `[App] Redirecting unauthenticated user to /login from: /`
 
 If you see `[auth/user] User found, returning user data` when you shouldn't be authenticated, there's a stale session cookie that needs to be cleared.
+
+---
+
+## Auth hygiene (local dev / "replit" auto-login)
+
+If a **local dev** user seems to auto-login when the server starts (e.g. leftover from Replit or local scripts):
+
+1. **Remove dev users**  
+   `DELETE /api/auth/remove-dev-users?email=dev@localhost`  
+   Removes any `dev@localhost` users from the DB. The app blocks creating them; this cleans up existing ones.
+
+2. **Auto-delete on startup**  
+   Set `AUTO_DELETE_DEV_USER=true` in `.env`. The auth layer will delete `dev@localhost` on startup if found.
+
+3. **Clear sessions**  
+   Stale `connect.sid` cookies or DB sessions can make it look like you’re logged in. Clear cookies (see above) or run:
+   ```sql
+   DELETE FROM sessions;
+   ```
+
+4. **Force logout**  
+   `POST /api/auth/force-logout` (when authenticated) clears your session.
+
+5. **Clear-session redirect**  
+   Open `/?logout=true` to clear session and redirect to login.
+
+Use these when debugging “dashboard instead of login” or unexpected dev-user logins.

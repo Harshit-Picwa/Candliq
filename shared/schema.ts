@@ -20,6 +20,8 @@ export const projects = pgTable("projects", {
   smeNotesText: text("sme_notes_text"),
   companyWebsite: varchar("company_website"),
   interviewDuration: integer("interview_duration"),
+  introMinutes: integer("intro_minutes"),
+  closureMinutes: integer("closure_minutes"),
   competencyRubricJson: jsonb("competency_rubric_json").$type<Competency[]>(),
   screeningQuestionsJson: jsonb("screening_questions_json").$type<ScreeningQuestion[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

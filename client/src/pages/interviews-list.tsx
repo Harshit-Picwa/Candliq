@@ -98,12 +98,12 @@ export default function InterviewsListPage() {
   if (isLoading) {
     return (
       <DesktopOnlyGuard>
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen page-gradient">
           <Header />
           <main className="max-w-4xl mx-auto px-8 py-12">
-            <Skeleton className="h-8 w-64 mb-8" />
+            <Skeleton className="h-8 w-64 mb-8 rounded-lg" />
             <div className="space-y-4">
-              {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
             </div>
           </main>
         </div>
@@ -113,7 +113,7 @@ export default function InterviewsListPage() {
 
   return (
     <DesktopOnlyGuard>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen page-gradient">
         <Header />
         <main className="max-w-4xl mx-auto px-8 py-12">
           <div className="flex items-center gap-4 mb-6">
@@ -123,12 +123,12 @@ export default function InterviewsListPage() {
               </Link>
             </Button>
             <div className="flex-1">
-              <h1 className="text-2xl font-semibold">{project?.title}</h1>
-              <p className="text-muted-foreground">Interviews</p>
+              <h1 className="text-2xl font-bold tracking-tight">{project?.title}</h1>
+              <p className="text-muted-foreground text-sm mt-0.5">Interviews</p>
             </div>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button data-testid="button-create-interview">
+                <Button className="shadow-sm" data-testid="button-create-interview">
                   <Plus className="w-4 h-4 mr-2" />
                   New Interview
                 </Button>
@@ -192,16 +192,16 @@ export default function InterviewsListPage() {
           </div>
 
           {!interviews || interviews.length === 0 ? (
-            <Card className="p-12">
-              <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                  <User className="w-8 h-8 text-muted-foreground" />
+            <Card className="rounded-2xl border-card-border/80 card-elevated p-16">
+              <div className="text-center max-w-md mx-auto">
+                <div className="mx-auto w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 ring-2 ring-primary/10">
+                  <User className="w-10 h-10 text-primary" />
                 </div>
-                <h3 className="text-lg font-medium mb-2">No interviews yet</h3>
-                <p className="text-muted-foreground mb-6">
-                  Create your first interview for this role
+                <h3 className="text-xl font-semibold mb-2">No interviews yet</h3>
+                <p className="text-muted-foreground mb-8 leading-relaxed">
+                  Create your first interview for this role.
                 </p>
-                <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-interview">
+                <Button className="shadow-sm" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-interview">
                   <Plus className="w-4 h-4 mr-2" />
                   New Interview
                 </Button>
@@ -210,9 +210,9 @@ export default function InterviewsListPage() {
           ) : (
             <div className="space-y-4">
               {interviews.map((interview) => (
-                <Card key={interview.id} className="group" data-testid={`card-interview-${interview.id}`}>
+                <Card key={interview.id} className="group card-elevated rounded-2xl border-card-border/80 overflow-hidden" data-testid={`card-interview-${interview.id}`}>
                   <CardHeader className="flex flex-row items-center gap-4 py-4">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                       <User className="w-5 h-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
