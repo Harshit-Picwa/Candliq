@@ -454,7 +454,10 @@ export async function registerRoutes(
             const question = questions.find(q => q.id === currentQuestionId);
             if (question) {
               // Get candidate's answer (all entries since question was asked, up to this interviewer entry)
-              const answerEntries = transcript.slice(candidateAnswerStartIndex, -1).filter(e => e.speaker === "candidate");
+              const answerStartIndex = candidateAnswerStartIndex ?? undefined;
+              const answerEntries = transcript
+                .slice(answerStartIndex, -1)
+                .filter(e => e.speaker === "candidate");
               const candidateAnswer = answerEntries.map(e => e.text).join(" ");
               
               if (candidateAnswer.trim().length > 20) {
@@ -468,7 +471,7 @@ export async function registerRoutes(
                   .then((evaluation) => {
                     // Find the last candidate entry to attach evaluation
                     const lastCandidateEntry = transcript
-                      .slice(candidateAnswerStartIndex, -1)
+                      .slice(answerStartIndex, -1)
                       .filter(e => e.speaker === "candidate")
                       .pop();
                     
@@ -506,7 +509,10 @@ export async function registerRoutes(
           
           // Also evaluate if candidate has been speaking for a while (long answer)
           if (speaker === "candidate" && currentQuestionId && candidateAnswerStartIndex !== null) {
-            const answerEntries = transcript.slice(candidateAnswerStartIndex).filter(e => e.speaker === "candidate");
+            const answerStartIndex = candidateAnswerStartIndex ?? undefined;
+            const answerEntries = transcript
+              .slice(answerStartIndex)
+              .filter(e => e.speaker === "candidate");
             const candidateAnswer = answerEntries.map(e => e.text).join(" ");
             
             // If answer is very long (500+ chars), evaluate immediately

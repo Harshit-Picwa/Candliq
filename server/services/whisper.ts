@@ -8,7 +8,7 @@ const openai = new OpenAI({
 });
 
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  const blob = new Blob([audioBuffer], { type: "audio/webm" });
+  const blob = new Blob([new Uint8Array(audioBuffer)], { type: "audio/webm" });
   const file = new File([blob], "audio.webm", { type: "audio/webm" });
   
   try {

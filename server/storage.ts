@@ -94,7 +94,17 @@ export class DatabaseStorage implements IStorage {
 
   async createInterview(interview: InsertInterview): Promise<Interview> {
     const created = await db.interview.create({
-      data: interview as Prisma.InterviewCreateInput,
+      data: {
+        project: { connect: { id: interview.projectId } },
+        candidateName: interview.candidateName,
+        candidateEmail: interview.candidateEmail ?? undefined,
+        resumeText: interview.resumeText ?? undefined,
+        transcriptJson: interview.transcriptJson ?? undefined,
+        reportJson: interview.reportJson ?? undefined,
+        notesJson: interview.notesJson ?? undefined,
+        status: interview.status ?? "draft",
+        consentGiven: interview.consentGiven ?? false,
+      },
     });
     return created as Interview;
   }
