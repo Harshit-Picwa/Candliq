@@ -27,9 +27,10 @@ export function getSession() {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
-    ttl: sessionTtl,
+    createTableIfMissing: true,
+    ttl: Math.floor(sessionTtl / 1000), // connect-pg-simple expects seconds
     tableName: "sessions",
+    schemaName: "public",
   });
   const isProduction = process.env.NODE_ENV === "production";
   // Use automatic secure cookies in production based on request protocol.
@@ -49,6 +50,7 @@ export function getSession() {
     saveUninitialized: false,
     name: "connect.sid",
     cookie: cookieConfig,
+    proxy: isProduction,
   });
 }
 
