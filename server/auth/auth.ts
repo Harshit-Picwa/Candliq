@@ -35,6 +35,25 @@ export function getSession() {
   sessionStore.on("error", (error) => {
     console.error("[auth] Session store error:", error);
   });
+  
+  // Test session store connection on startup
+  sessionStore.on("connect", () => {
+    console.log("[auth] ✓ Session store connected successfully");
+  });
+  
+  // Log when sessions are saved
+  const originalSet = sessionStore.set.bind(sessionStore);
+  sessionStore.set = function(sid, sess, callback) {
+    console.log(`[auth] Saving session ${sid} to database`);
+    return originalSet(sid, sess, (err) => {
+      if (err) {
+        console.error(`[auth] Error saving session ${sid}:`, err);
+      } else {
+        console.log(`[auth] ✓ Session ${sid} saved successfully`);
+      }
+      if (callback) callback(err);
+    });
+  };
   const isProduction = process.env.NODE_ENV === "production";
   // For HTTP (EC2 without SSL), secure must be false
   // When you add HTTPS, set USE_SECURE_COOKIES=true in .env
@@ -265,31 +284,60 @@ export async function setupAuth(app: Express) {
       if (!user) {
         return res.status(401).json({ error: info?.message || "Authentication failed" });
       }
-      req.login(user, (loginErr) => {
-        if (loginErr) {
-          return res.status(500).json({ error: "Failed to create session" });
+      
+      // Regenerate session first to get a fresh session ID
+      req.session.regenerate((regenerateErr) => {
+        if (regenerateErr) {
+          console.error("[login] Error regenerating session:", regenerateErr);
+          return res.status(500).json({ error: "Failed to regenerate session" });
         }
-        // Explicitly save the session to ensure it's persisted
-        req.session.save((saveErr) => {
-          if (saveErr) {
-            console.error("[login] Error saving session:", saveErr);
-            return res.status(500).json({ error: "Failed to save session" });
+        
+        // Login after regeneration - this will set req.session.passport.user
+        req.login(user, (loginErr) => {
+          if (loginErr) {
+            console.error("[login] Error during login:", loginErr);
+            return res.status(500).json({ error: "Failed to create session" });
           }
-          console.log("[login] Session saved successfully for user:", user.id);
-          console.log("[login] Session ID:", req.sessionID);
-          console.log("[login] req.session.passport:", JSON.stringify(req.session.passport));
-          console.log("[login] req.isAuthenticated():", req.isAuthenticated());
-          console.log("[login] req.user:", req.user);
           
-          // Force cookie to be set by touching the session
+          // Mark session as modified to ensure cookie is set
           req.session.touch();
           
-          // Log cookie config to verify settings
-          console.log("[login] Session cookie path:", req.session.cookie.path);
-          console.log("[login] Session cookie secure:", req.session.cookie.secure);
-          console.log("[login] Session cookie sameSite:", req.session.cookie.sameSite);
-          
-          return res.json({ success: true, user });
+          // Explicitly save the session to ensure it's persisted
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error("[login] Error saving session:", saveErr);
+              return res.status(500).json({ error: "Failed to save session" });
+            }
+            
+            console.log("[login] Session saved successfully for user:", user.id);
+            console.log("[login] Session ID:", req.sessionID);
+            console.log("[login] req.session.passport:", JSON.stringify(req.session.passport));
+            console.log("[login] req.isAuthenticated():", req.isAuthenticated());
+            console.log("[login] req.user:", req.user);
+            
+            // Log cookie config to verify settings
+            console.log("[login] Session cookie path:", req.session.cookie.path);
+            console.log("[login] Session cookie secure:", req.session.cookie.secure);
+            console.log("[login] Session cookie sameSite:", req.session.cookie.sameSite);
+            
+            // Log session state before sending response
+            console.log("[login] Session ID:", req.sessionID);
+            console.log("[login] Session isNew:", (req.session as any).isNew);
+            console.log("[login] Session cookie name: connect.sid");
+            
+            // Check if Set-Cookie header is set before sending response
+            const setCookieBefore = res.getHeader("Set-Cookie");
+            console.log("[login] Set-Cookie header BEFORE res.json():", setCookieBefore);
+            
+            // Send response - express-session should set cookie during response write
+            res.json({ success: true, user });
+            
+            // Check Set-Cookie header after sending (in next tick)
+            process.nextTick(() => {
+              const setCookieAfter = res.getHeader("Set-Cookie");
+              console.log("[login] Set-Cookie header AFTER res.json():", setCookieAfter);
+            });
+          });
         });
       });
     })(req, res, next);
@@ -336,33 +384,52 @@ export async function setupAuth(app: Express) {
 
       // Auto-login after signup
       // Convert null to undefined to match Express.User type
-      req.login(
-        {
-          id: user.id,
-          email: user.email ?? undefined,
-          firstName: user.firstName ?? undefined,
-          lastName: user.lastName ?? undefined,
-          profileImageUrl: user.profileImageUrl ?? undefined,
-        },
-        (err) => {
+      const userForSession = {
+        id: user.id,
+        email: user.email ?? undefined,
+        firstName: user.firstName ?? undefined,
+        lastName: user.lastName ?? undefined,
+        profileImageUrl: user.profileImageUrl ?? undefined,
+      };
+      
+      // Regenerate session to ensure fresh session ID
+      req.session.regenerate((regenerateErr) => {
+        if (regenerateErr) {
+          console.error("[signup] Error regenerating session:", regenerateErr);
+          return res.status(500).json({ error: "Account created but failed to create session" });
+        }
+        
+        // Login after regeneration
+        req.login(userForSession, (err) => {
           if (err) {
             console.error("[signup] Error during login:", err);
             return res.status(500).json({ error: "Account created but failed to log in" });
           }
+          
+          // Mark session as modified to ensure cookie is set
+          req.session.touch();
+          
           // Explicitly save the session to ensure it's persisted
           req.session.save((saveErr) => {
             if (saveErr) {
               console.error("[signup] Error saving session:", saveErr);
               return res.status(500).json({ error: "Account created but failed to save session" });
             }
+            
+            // Log session state before sending response
+            console.log("[signup] Session ID:", req.sessionID);
+            console.log("[signup] Session isNew:", (req.session as any).isNew);
+            console.log("[signup] Session cookie name: connect.sid");
+            
+            // Check if Set-Cookie header is set before sending response
+            const setCookieBefore = res.getHeader("Set-Cookie");
+            console.log("[signup] Set-Cookie header BEFORE res.json():", setCookieBefore);
+            
             console.log("[signup] Session saved successfully for user:", user.id);
             console.log("[signup] Session ID:", req.sessionID);
             console.log("[signup] req.session.passport:", JSON.stringify(req.session.passport));
             console.log("[signup] req.isAuthenticated():", req.isAuthenticated());
             console.log("[signup] req.user:", req.user);
-            
-            // Force cookie to be set by touching the session
-            req.session.touch();
             
             // Log cookie config to verify settings
             console.log("[signup] Session cookie path:", req.session.cookie.path);
@@ -377,10 +444,17 @@ export async function setupAuth(app: Express) {
               profileImageUrl: user.profileImageUrl ?? undefined,
             };
             
-            return res.json({ success: true, user: userResponse });
+            // Send response - express-session should set cookie during response write
+            res.json({ success: true, user: userResponse });
+            
+            // Check Set-Cookie header after sending (in next tick)
+            process.nextTick(() => {
+              const setCookieAfter = res.getHeader("Set-Cookie");
+              console.log("[signup] Set-Cookie header AFTER res.json():", setCookieAfter);
+            });
           });
-        }
-      );
+        });
+      });
     } catch (error: any) {
       console.error("Signup error:", error);
       res.status(500).json({ error: "Failed to create account", details: error?.message });
