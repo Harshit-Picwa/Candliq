@@ -6,6 +6,15 @@ import connectPg from "connect-pg-simple";
 import bcrypt from "bcrypt";
 import { authStorage } from "./storage";
 
+// Extend express-session Session type to include passport property
+declare module "express-session" {
+  interface SessionData {
+    passport?: {
+      user?: any;
+    };
+  }
+}
+
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const sessionSecret =
@@ -113,6 +122,19 @@ export async function setupAuth(app: Express) {
   // Explicitly prevent any automatic user creation
   console.log("[auth] ✓ Automatic user creation is DISABLED. Users must sign up through /api/signup");
   
+  // Debug middleware to log session state on every request
+  app.use((req: any, res, next) => {
+    if (req.path === "/api/auth/user" || req.path.startsWith("/api/projects") || req.path.startsWith("/api/interviews")) {
+      console.log(`[auth-middleware] ${req.method} ${req.path}`);
+      console.log(`[auth-middleware] Session exists:`, !!req.session);
+      console.log(`[auth-middleware] Session ID:`, req.sessionID);
+      console.log(`[auth-middleware] Session passport:`, req.session?.passport ? JSON.stringify(req.session.passport) : "missing");
+      console.log(`[auth-middleware] req.isAuthenticated():`, req.isAuthenticated());
+      console.log(`[auth-middleware] req.user:`, req.user);
+    }
+    next();
+  });
+
   // Middleware to validate and clear invalid sessions
   app.use(async (req: any, res, next) => {
     if (req.isAuthenticated() && req.user && req.user.id) {
@@ -183,6 +205,8 @@ export async function setupAuth(app: Express) {
 
   passport.serializeUser((user: Express.User, cb) => {
     console.log("[serializeUser] Serializing user:", JSON.stringify(user));
+    // Passport stores this in req.session.passport.user
+    // We serialize the entire user object
     cb(null, user);
   });
 
@@ -246,6 +270,10 @@ export async function setupAuth(app: Express) {
             return res.status(500).json({ error: "Failed to save session" });
           }
           console.log("[login] Session saved successfully for user:", user.id);
+          console.log("[login] Session ID:", req.sessionID);
+          console.log("[login] req.session.passport:", JSON.stringify(req.session.passport));
+          console.log("[login] req.isAuthenticated():", req.isAuthenticated());
+          console.log("[login] req.user:", req.user);
           return res.json({ success: true, user });
         });
       });
@@ -314,7 +342,9 @@ export async function setupAuth(app: Express) {
             }
             console.log("[signup] Session saved successfully for user:", user.id);
             console.log("[signup] Session ID:", req.sessionID);
-            console.log("[signup] Cookie will be set:", req.session.cookie);
+            console.log("[signup] req.session.passport:", JSON.stringify(req.session.passport));
+            console.log("[signup] req.isAuthenticated():", req.isAuthenticated());
+            console.log("[signup] req.user:", req.user);
             
             // Ensure cookie is set in response
             // The session middleware should handle this, but we'll make sure

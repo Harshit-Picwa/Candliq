@@ -13,6 +13,10 @@ export function registerAuthRoutes(app: Express): void {
       console.log("[auth/user] req.sessionID:", req.sessionID);
       console.log("[auth/user] req.cookies:", JSON.stringify(req.cookies));
       console.log("[auth/user] req.session:", req.session ? "exists" : "missing");
+      if (req.session) {
+        console.log("[auth/user] req.session.passport:", JSON.stringify(req.session.passport));
+        console.log("[auth/user] req.session.passport?.user:", req.session.passport?.user);
+      }
       
       // Check if user is authenticated
       if (!req.isAuthenticated() || !req.user || !req.user.id) {
@@ -20,6 +24,7 @@ export function registerAuthRoutes(app: Express): void {
         console.log("[auth/user] Debug - isAuthenticated:", req.isAuthenticated());
         console.log("[auth/user] Debug - req.user:", req.user);
         console.log("[auth/user] Debug - req.user?.id:", req.user?.id);
+        console.log("[auth/user] Debug - session.passport:", req.session?.passport);
         return res.status(401).json(null);
       }
       
