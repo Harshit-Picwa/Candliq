@@ -7,7 +7,7 @@ import { rm, readFile } from "fs/promises";
 const allowlist = [
   "@google/generative-ai",
   "axios",
-  "bcrypt",
+  // "bcrypt", // Native module - must be external, cannot be bundled
   "connect-pg-simple",
   "cors",
   "date-fns",
