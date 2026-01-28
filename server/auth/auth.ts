@@ -32,15 +32,14 @@ export function getSession() {
     tableName: "sessions",
   });
   const isProduction = process.env.NODE_ENV === "production";
-  // Use HTTPS detection: secure cookies only if explicitly using HTTPS
-  // For HTTP (like EC2 without SSL), we need secure: false
-  const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
+  // Use automatic secure cookies in production based on request protocol.
+  // This avoids broken cookies on HTTP while still supporting HTTPS later.
   const cookieConfig: any = {
     httpOnly: true,
-    secure: useSecureCookies, // Only true if explicitly enabled (requires HTTPS)
+    secure: isProduction ? "auto" : false,
     maxAge: sessionTtl,
     path: "/",
-    sameSite: useSecureCookies ? "none" : "lax", // 'lax' works with HTTP, 'none' requires HTTPS
+    sameSite: "lax",
   };
   
   return session({
@@ -380,12 +379,13 @@ export async function setupAuth(app: Express) {
           return res.status(500).json({ error: "Failed to destroy session" });
         }
         // Clear cookie with same settings as session cookie
-        const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
+        const isSecureRequest =
+          req.secure || req.headers["x-forwarded-proto"] === "https";
         res.clearCookie("connect.sid", {
           path: "/",
           httpOnly: true,
-          secure: useSecureCookies,
-          sameSite: useSecureCookies ? "none" : "lax",
+          secure: isSecureRequest,
+          sameSite: "lax",
         });
         res.json({ success: true });
       });
@@ -403,12 +403,13 @@ export async function setupAuth(app: Express) {
           return res.status(500).json({ error: "Failed to destroy session" });
         }
         // Clear cookie with same settings as session cookie
-        const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
+        const isSecureRequest =
+          req.secure || req.headers["x-forwarded-proto"] === "https";
         res.clearCookie("connect.sid", {
           path: "/",
           httpOnly: true,
-          secure: useSecureCookies,
-          sameSite: useSecureCookies ? "none" : "lax",
+          secure: isSecureRequest,
+          sameSite: "lax",
         });
         res.redirect("/");
       });
