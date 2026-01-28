@@ -11,10 +11,15 @@ export function registerAuthRoutes(app: Express): void {
       console.log("[auth/user] req.isAuthenticated():", req.isAuthenticated());
       console.log("[auth/user] req.user:", req.user);
       console.log("[auth/user] req.sessionID:", req.sessionID);
+      console.log("[auth/user] req.cookies:", JSON.stringify(req.cookies));
+      console.log("[auth/user] req.session:", req.session ? "exists" : "missing");
       
       // Check if user is authenticated
       if (!req.isAuthenticated() || !req.user || !req.user.id) {
         console.log("[auth/user] User not authenticated, returning 401");
+        console.log("[auth/user] Debug - isAuthenticated:", req.isAuthenticated());
+        console.log("[auth/user] Debug - req.user:", req.user);
+        console.log("[auth/user] Debug - req.user?.id:", req.user?.id);
         return res.status(401).json(null);
       }
       

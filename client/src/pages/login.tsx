@@ -56,10 +56,15 @@ export default function LoginPage() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Wait a bit for the session cookie to be set before invalidating query
+      await new Promise(resolve => setTimeout(resolve, 100));
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Welcome back!", description: "You've been logged in successfully." });
-      navigate("/dashboard");
+      // Small delay before navigation to ensure cookie is set
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 200);
     },
     onError: (error: any) => {
       toast({
@@ -96,10 +101,15 @@ export default function LoginPage() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Wait a bit for the session cookie to be set before invalidating query
+      await new Promise(resolve => setTimeout(resolve, 100));
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Account created!", description: "Welcome to Candiq.AI!" });
-      navigate("/dashboard");
+      // Small delay before navigation to ensure cookie is set
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 200);
     },
     onError: (error: any) => {
       toast({

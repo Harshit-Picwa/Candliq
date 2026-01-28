@@ -313,7 +313,20 @@ export async function setupAuth(app: Express) {
               return res.status(500).json({ error: "Account created but failed to save session" });
             }
             console.log("[signup] Session saved successfully for user:", user.id);
-            return res.json({ success: true, user });
+            console.log("[signup] Session ID:", req.sessionID);
+            console.log("[signup] Cookie will be set:", req.session.cookie);
+            
+            // Ensure cookie is set in response
+            // The session middleware should handle this, but we'll make sure
+            const userResponse = {
+              id: user.id,
+              email: user.email ?? undefined,
+              firstName: user.firstName ?? undefined,
+              lastName: user.lastName ?? undefined,
+              profileImageUrl: user.profileImageUrl ?? undefined,
+            };
+            
+            return res.json({ success: true, user: userResponse });
           });
         }
       );
