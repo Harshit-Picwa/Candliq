@@ -47,10 +47,11 @@ export function getSession() {
     secret: sessionSecret,
     store: sessionStore,
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     name: "connect.sid",
     cookie: cookieConfig,
     proxy: isProduction,
+    rolling: true,
   });
 }
 
