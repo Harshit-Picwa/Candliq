@@ -45,6 +45,13 @@ async function buildAll() {
     ...Object.keys(pkg.devDependencies || {}),
   ];
   const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  
+  // Explicitly ensure native/problematic modules are external
+  const explicitExternals = [
+    ...externals,
+    "bcrypt",        // Native module - must be external
+    "pdf-parse",     // Uses browser APIs - must be external
+  ];
 
   await esbuild({
     entryPoints: ["server/index.ts"],
@@ -56,7 +63,7 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
-    external: externals,
+    external: explicitExternals,
     logLevel: "info",
   });
 }
