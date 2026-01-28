@@ -32,6 +32,9 @@ export function getSession() {
     tableName: "sessions",
     schemaName: "public",
   });
+  sessionStore.on("error", (error) => {
+    console.error("[auth] Session store error:", error);
+  });
   const isProduction = process.env.NODE_ENV === "production";
   // Use automatic secure cookies in production based on request protocol.
   // This avoids broken cookies on HTTP while still supporting HTTPS later.
