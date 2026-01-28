@@ -36,14 +36,15 @@ export function getSession() {
     console.error("[auth] Session store error:", error);
   });
   const isProduction = process.env.NODE_ENV === "production";
-  // Use automatic secure cookies in production based on request protocol.
-  // This avoids broken cookies on HTTP while still supporting HTTPS later.
+  // For HTTP (EC2 without SSL), secure must be false
+  // When you add HTTPS, set USE_SECURE_COOKIES=true in .env
+  const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
   const cookieConfig: any = {
     httpOnly: true,
-    secure: isProduction ? "auto" : false,
+    secure: useSecureCookies, // false for HTTP, true for HTTPS
     maxAge: sessionTtl,
     path: "/",
-    sameSite: "lax",
+    sameSite: useSecureCookies ? "none" : "lax",
   };
   
   return session({
@@ -279,6 +280,15 @@ export async function setupAuth(app: Express) {
           console.log("[login] req.session.passport:", JSON.stringify(req.session.passport));
           console.log("[login] req.isAuthenticated():", req.isAuthenticated());
           console.log("[login] req.user:", req.user);
+          
+          // Force cookie to be set by touching the session
+          req.session.touch();
+          
+          // Log cookie config to verify settings
+          console.log("[login] Session cookie path:", req.session.cookie.path);
+          console.log("[login] Session cookie secure:", req.session.cookie.secure);
+          console.log("[login] Session cookie sameSite:", req.session.cookie.sameSite);
+          
           return res.json({ success: true, user });
         });
       });
@@ -351,8 +361,14 @@ export async function setupAuth(app: Express) {
             console.log("[signup] req.isAuthenticated():", req.isAuthenticated());
             console.log("[signup] req.user:", req.user);
             
-            // Ensure cookie is set in response
-            // The session middleware should handle this, but we'll make sure
+            // Force cookie to be set by touching the session
+            req.session.touch();
+            
+            // Log cookie config to verify settings
+            console.log("[signup] Session cookie path:", req.session.cookie.path);
+            console.log("[signup] Session cookie secure:", req.session.cookie.secure);
+            console.log("[signup] Session cookie sameSite:", req.session.cookie.sameSite);
+            
             const userResponse = {
               id: user.id,
               email: user.email ?? undefined,

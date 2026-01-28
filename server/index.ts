@@ -63,6 +63,12 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
+      
+      // Log Set-Cookie header for auth endpoints
+      if (path.includes("/login") || path.includes("/signup") || path.includes("/auth/user")) {
+        const setCookie = res.getHeader("Set-Cookie");
+        logLine += ` | Set-Cookie: ${setCookie ? (Array.isArray(setCookie) ? setCookie.join("; ") : setCookie) : "NONE"}`;
+      }
 
       log(logLine);
     }
