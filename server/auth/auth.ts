@@ -25,7 +25,7 @@ export function getSession() {
   const isProduction = process.env.NODE_ENV === "production";
   // Use HTTPS detection: secure cookies only if explicitly using HTTPS
   // For HTTP (like EC2 without SSL), we need secure: false
-  const useSecureCookies = process.env.USE_SECURE_COOKIES === "true" || false;
+  const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
   const cookieConfig: any = {
     httpOnly: true,
     secure: useSecureCookies, // Only true if explicitly enabled (requires HTTPS)
@@ -151,6 +151,11 @@ export async function setupAuth(app: Express) {
             return done(null, false, { message: "Invalid email or password" });
           }
 
+          if (!user.email) {
+            console.error("[auth] User found but email is missing:", user.id);
+            return done(null, false, { message: "Account data is invalid" });
+          }
+
           if (!user.passwordHash) {
             return done(null, false, { message: "Account not set up. Please sign up." });
           }
@@ -161,12 +166,13 @@ export async function setupAuth(app: Express) {
           }
 
           // Return user in format expected by session
+          // Convert null to undefined to match Express.User type
           return done(null, {
             id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            profileImageUrl: user.profileImageUrl,
+            email: user.email ?? undefined, // Guaranteed to be present due to check above, but convert null to undefined
+            firstName: user.firstName ?? undefined,
+            lastName: user.lastName ?? undefined,
+            profileImageUrl: user.profileImageUrl ?? undefined,
           });
         } catch (error) {
           return done(error);
@@ -180,25 +186,39 @@ export async function setupAuth(app: Express) {
     cb(null, user);
   });
 
-  passport.deserializeUser(async (user: Express.User, cb) => {
-    console.log("[deserializeUser] Deserializing user:", JSON.stringify(user));
-    if (!user) {
-      console.error("[deserializeUser] User is null or undefined");
-      return cb(null, false);
-    }
-    if (!user.id) {
-      console.error("[deserializeUser] User object missing id:", user);
+  passport.deserializeUser(async (serializedUser: any, cb) => {
+    console.log("[deserializeUser] Deserializing user:", JSON.stringify(serializedUser));
+    
+    // Handle case where serialized data might be just an ID or the full user object
+    let userId: string;
+    if (typeof serializedUser === "string") {
+      userId = serializedUser;
+    } else if (serializedUser && serializedUser.id) {
+      userId = serializedUser.id;
+    } else {
+      console.error("[deserializeUser] Invalid serialized user data:", serializedUser);
       return cb(null, false);
     }
     
     // Verify user still exists in database
     try {
-      const dbUser = await authStorage.getUser(user.id);
+      const dbUser = await authStorage.getUser(userId);
       if (!dbUser) {
         console.error("[deserializeUser] User not found in database, invalidating session");
         return cb(null, false);
       }
-      console.log("[deserializeUser] Successfully deserialized user with id:", user.id);
+      
+      // Return user in format expected by session
+      // Convert null to undefined to match Express.User type
+      const user: Express.User = {
+        id: dbUser.id,
+        email: dbUser.email ?? undefined,
+        firstName: dbUser.firstName ?? undefined,
+        lastName: dbUser.lastName ?? undefined,
+        profileImageUrl: dbUser.profileImageUrl ?? undefined,
+      };
+      
+      console.log("[deserializeUser] Successfully deserialized user with id:", userId);
       cb(null, user);
     } catch (error) {
       console.error("[deserializeUser] Error verifying user:", error);
@@ -272,13 +292,14 @@ export async function setupAuth(app: Express) {
       console.log(`[auth] User created successfully: ${user.id} (${email})`);
 
       // Auto-login after signup
+      // Convert null to undefined to match Express.User type
       req.login(
         {
           id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          profileImageUrl: user.profileImageUrl,
+          email: user.email ?? undefined,
+          firstName: user.firstName ?? undefined,
+          lastName: user.lastName ?? undefined,
+          profileImageUrl: user.profileImageUrl ?? undefined,
         },
         (err) => {
           if (err) {
@@ -315,7 +336,14 @@ export async function setupAuth(app: Express) {
         if (destroyErr) {
           return res.status(500).json({ error: "Failed to destroy session" });
         }
-        res.clearCookie("connect.sid");
+        // Clear cookie with same settings as session cookie
+        const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
+        res.clearCookie("connect.sid", {
+          path: "/",
+          httpOnly: true,
+          secure: useSecureCookies,
+          sameSite: useSecureCookies ? "none" : "lax",
+        });
         res.json({ success: true });
       });
     });
@@ -331,7 +359,14 @@ export async function setupAuth(app: Express) {
         if (destroyErr) {
           return res.status(500).json({ error: "Failed to destroy session" });
         }
-        res.clearCookie("connect.sid");
+        // Clear cookie with same settings as session cookie
+        const useSecureCookies = process.env.USE_SECURE_COOKIES === "true";
+        res.clearCookie("connect.sid", {
+          path: "/",
+          httpOnly: true,
+          secure: useSecureCookies,
+          sameSite: useSecureCookies ? "none" : "lax",
+        });
         res.redirect("/");
       });
     });
