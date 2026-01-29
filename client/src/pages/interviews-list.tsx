@@ -27,6 +27,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, Interview } from "@shared/schema";
+import { ProjectWorkflow } from "@/components/project-workflow";
 import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock } from "lucide-react";
 import { format } from "date-fns";
 
@@ -179,17 +180,7 @@ export default function InterviewsListPage() {
             </Dialog>
           </div>
 
-          <div className="flex gap-2 mb-8">
-            <Link href={`/projects/${projectId}`}>
-              <Button variant="ghost" size="sm">Setup</Button>
-            </Link>
-            <Link href={`/projects/${projectId}/questions`}>
-              <Button variant="ghost" size="sm">Questions</Button>
-            </Link>
-            <Link href={`/projects/${projectId}/interviews`}>
-              <Button variant="secondary" size="sm">Interviews</Button>
-            </Link>
-          </div>
+          <ProjectWorkflow currentStep="interviews" projectId={projectId!} />
 
           {!interviews || interviews.length === 0 ? (
             <Card className="rounded-2xl border-card-border/80 card-elevated p-16">

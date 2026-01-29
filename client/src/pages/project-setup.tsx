@@ -12,6 +12,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
+import { ProjectWorkflow } from "@/components/project-workflow";
 import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, Upload, X, CheckCircle, Settings } from "lucide-react";
 
 export default function ProjectSetupPage() {
@@ -66,30 +67,30 @@ export default function ProjectSetupPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("pdf", file);
-      
+
       setUploading(true);
       setUploadProgress(0);
-      
+
       // Simulate progress (since we can't track actual upload progress easily)
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => Math.min(prev + 10, 90));
       }, 200);
-      
+
       try {
         const response = await fetch(`/api/projects/${id}/upload-jd`, {
           method: "POST",
           body: formData,
           credentials: "include",
         });
-        
+
         clearInterval(progressInterval);
         setUploadProgress(100);
-        
+
         if (!response.ok) {
           const error = await response.json();
           throw new Error(error.error || "Upload failed");
         }
-        
+
         const result = await response.json();
         return result;
       } finally {
@@ -99,16 +100,16 @@ export default function ProjectSetupPage() {
         }, 500);
       }
     },
-    onSuccess: (data) => {   
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
       setJdText(data.jdText || "");
       toast({ title: "PDF uploaded", description: "Text extracted from PDF successfully." });
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Upload failed", 
-        description: error?.message || "Failed to upload PDF.", 
-        variant: "destructive" 
+      toast({
+        title: "Upload failed",
+        description: error?.message || "Failed to upload PDF.",
+        variant: "destructive"
       });
     },
   });
@@ -119,7 +120,7 @@ export default function ProjectSetupPage() {
         method: "POST",
         credentials: "include",
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         const error = new Error(errorData.error || errorData.details || response.statusText);
@@ -127,7 +128,7 @@ export default function ProjectSetupPage() {
         (error as any).data = errorData;
         throw error;
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -138,18 +139,18 @@ export default function ProjectSetupPage() {
     onError: (error: any) => {
       const errorMessage = error?.data?.error || error?.message || "Failed to generate questions.";
       const errorDetails = error?.data?.details || "";
-      toast({ 
-        title: "Error", 
-        description: errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage, 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage,
+        variant: "destructive"
       });
     },
   });
 
   const handleSave = () => {
-    updateProject.mutate({ 
-      title, 
-      jdText, 
+    updateProject.mutate({
+      title,
+      jdText,
       smeNotesText: smeNotes,
       companyWebsite: companyWebsite || undefined,
       interviewDuration: interviewDuration || undefined,
@@ -161,27 +162,27 @@ export default function ProjectSetupPage() {
       toast({ title: "Job description required", description: "Please add a job description first.", variant: "destructive" });
       return;
     }
-    
+
     try {
       // First, save the project with the JD
-      await updateProject.mutateAsync({ 
-        title, 
-        jdText, 
+      await updateProject.mutateAsync({
+        title,
+        jdText,
         smeNotesText: smeNotes,
         companyWebsite: companyWebsite || undefined,
         interviewDuration: interviewDuration || undefined,
       } as any);
-      
+
       // Wait a moment for the database to update
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Then generate questions
       generateQuestions.mutate();
     } catch (error: any) {
-      toast({ 
-        title: "Save failed", 
-        description: error?.message || "Failed to save project before generating questions.", 
-        variant: "destructive" 
+      toast({
+        title: "Save failed",
+        description: error?.message || "Failed to save project before generating questions.",
+        variant: "destructive"
       });
     }
   };
@@ -213,7 +214,7 @@ export default function ProjectSetupPage() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileSelect(e.dataTransfer.files[0]);
     }
@@ -256,17 +257,7 @@ export default function ProjectSetupPage() {
             </Button>
           </div>
 
-          <div className="flex gap-2 mb-8">
-            <Link href={`/projects/${id}`}>
-              <Button variant="secondary" size="sm">Setup</Button>
-            </Link>
-            <Link href={`/projects/${id}/questions`}>
-              <Button variant="ghost" size="sm">Questions</Button>
-            </Link>
-            <Link href={`/projects/${id}/interviews`}>
-              <Button variant="ghost" size="sm">Interviews</Button>
-            </Link>
-          </div>
+          <ProjectWorkflow currentStep="setup" projectId={id!} />
 
           <div className="flex items-center mb-10">
             {[
@@ -278,25 +269,22 @@ export default function ProjectSetupPage() {
                 <button
                   type="button"
                   onClick={() => setSetupStep(step)}
-                  className={`flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm font-medium transition-all shrink-0 ${
-                    setupStep === step
-                      ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary/20"
-                      : "bg-card border border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  }`}
+                  className={`flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm font-medium transition-all shrink-0 ${setupStep === step
+                    ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary/20"
+                    : "bg-card border border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
                   data-testid={step === 1 ? "step-campaign" : step === 2 ? "step-jd" : "step-notes"}
                 >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${
-                    setupStep === step ? "bg-primary-foreground/20" : "bg-muted"
-                  }`}>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${setupStep === step ? "bg-primary-foreground/20" : "bg-muted"
+                    }`}>
                     {step}
                   </span>
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="hidden sm:inline">{label}</span>
                 </button>
                 {i < 2 && (
-                  <div className={`flex-1 h-0.5 mx-2 rounded-full transition-colors ${
-                    setupStep > step ? "bg-primary/40" : "bg-border"
-                  }`} />
+                  <div className={`flex-1 h-0.5 mx-2 rounded-full transition-colors ${setupStep > step ? "bg-primary/40" : "bg-border"
+                    }`} />
                 )}
               </div>
             ))}

@@ -1,13 +1,14 @@
 # Nginx configuration for Candiq-AI on EC2
 # Place this file at: /etc/nginx/sites-available/candiq-ai
-# Server IP: 3.103.97.187
+# Set server_name to your domain or public IP
 
 server {
     listen 80;
-    server_name 3.103.97.187;  # Your EC2 IP address
-    
-    # If you have a domain name, replace the IP above with your domain
+    # Use a domain if you have one (recommended), otherwise your IP.
     # server_name your-domain.com;
+    # server_name 3.103.6.160;
+    # server_name 3.103.97.187;
+    server_name _;
     
     # Redirect HTTP to HTTPS (uncomment after setting up SSL)
     # return 301 https://$server_name$request_uri;
@@ -44,7 +45,7 @@ server {
 # 
 # server {
 #     listen 443 ssl http2;
-#     server_name 3.103.97.187;  # or your-domain.com
+#     server_name your-domain.com;  # or your IP
 # 
 #     ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
 #     ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;

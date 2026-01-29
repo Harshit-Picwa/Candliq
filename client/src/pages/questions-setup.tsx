@@ -14,6 +14,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
+import { ProjectWorkflow } from "@/components/project-workflow";
 import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft } from "lucide-react";
 import {
   Dialog,
@@ -116,13 +117,13 @@ export default function QuestionsSetupPage() {
   const updateQuestion = (qId: string, updates: Partial<ScreeningQuestion>) => {
     const updatedQuestions = questions.map(q => q.id === qId ? { ...q, ...updates } : q);
     setQuestions(updatedQuestions);
-    
+
     // Mark as edited if question text changed
     if (updates.question !== undefined) {
       const newEdited = new Set(editedQuestionIds);
       newEdited.add(qId);
       setEditedQuestionIds(newEdited);
-      
+
       // Validate question text
       const question = updatedQuestions.find(q => q.id === qId);
       if (question && !question.question.trim()) {
@@ -135,7 +136,7 @@ export default function QuestionsSetupPage() {
         setInvalidQuestionIds(newInvalid);
       }
     }
-    
+
     setHasChanges(true);
     setApproved(false); // Unapprove if questions are edited
   };
@@ -148,7 +149,7 @@ export default function QuestionsSetupPage() {
     const competencyQuestions = questions
       .filter(q => q.competencyId === competencyId)
       .sort((a, b) => a.order - b.order);
-    
+
     const compIndex = competencyQuestions.findIndex(q => q.id === qId);
     if (compIndex === -1) return;
 
@@ -431,17 +432,7 @@ export default function QuestionsSetupPage() {
             )}
           </div>
 
-          <div className="flex gap-2 mb-8">
-            <Link href={`/projects/${id}`}>
-              <Button variant="ghost" size="sm">Setup</Button>
-            </Link>
-            <Link href={`/projects/${id}/questions`}>
-              <Button variant="secondary" size="sm">Questions</Button>
-            </Link>
-            <Link href={`/projects/${id}/interviews`}>
-              <Button variant="ghost" size="sm">Interviews</Button>
-            </Link>
-          </div>
+          <ProjectWorkflow currentStep="questions" projectId={id!} />
 
           {invalidQuestionIds.size > 0 && (
             <Card className="mb-6 rounded-xl border-destructive/50 bg-destructive/5">
@@ -548,11 +539,10 @@ export default function QuestionsSetupPage() {
                             key={question.id}
                             data-testid={`question-item-${question.id}`}
                             onClick={() => setSelectedQuestionId(question.id)}
-                            className={`rounded-xl border p-3 cursor-pointer transition-all ${
-                              selectedQuestionId === question.id
-                                ? "ring-2 ring-primary border-primary shadow-md bg-primary/5"
-                                : "hover:bg-muted/50 hover:border-muted-foreground/20"
-                            } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : "border-border/80"}`}
+                            className={`rounded-xl border p-3 cursor-pointer transition-all ${selectedQuestionId === question.id
+                              ? "ring-2 ring-primary border-primary shadow-md bg-primary/5"
+                              : "hover:bg-muted/50 hover:border-muted-foreground/20"
+                              } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : "border-border/80"}`}
                           >
                             <div className="flex items-start gap-2">
                               <div className="flex flex-col gap-0.5 shrink-0">
@@ -595,9 +585,8 @@ export default function QuestionsSetupPage() {
                                   value={question.question}
                                   onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
                                   onClick={(e) => e.stopPropagation()}
-                                  className={`min-h-[60px] resize-none text-sm border-none p-0 focus-visible:ring-0 bg-transparent ${
-                                    invalidQuestionIds.has(question.id) ? "text-destructive" : ""
-                                  }`}
+                                  className={`min-h-[60px] resize-none text-sm border-none p-0 focus-visible:ring-0 bg-transparent ${invalidQuestionIds.has(question.id) ? "text-destructive" : ""
+                                    }`}
                                   data-testid={`input-question-${question.id}`}
                                   placeholder="Enter question text..."
                                 />
