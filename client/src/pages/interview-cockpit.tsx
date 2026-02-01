@@ -39,6 +39,7 @@ import {
   User,
   Briefcase,
   Clock,
+  MessageSquare,
 } from "lucide-react";
 import { format } from "date-fns";
 

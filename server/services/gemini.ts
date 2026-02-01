@@ -290,8 +290,9 @@ ${question.question}
 
 RUBRIC:
 - Typical Reasoning: ${question.rubric.typicalReasoning}
-- Strong Signals: ${question.rubric.strongSignals.join(", ")}
-- Weak Signals: ${question.rubric.weakSignals.join(", ")}
+- Good Signals: ${question.rubric.goodSignals?.join(", ")}
+- Moderate Signals: ${question.rubric.moderateSignals?.join(", ")}
+- Poor Signals: ${question.rubric.poorSignals?.join(", ")}
 
 ${question.rubric.notes ? `- Notes: ${question.rubric.notes}` : ""}
 
@@ -368,7 +369,7 @@ Only output valid JSON. No markdown code blocks.`;
     return {
       quality: "moderate",
       score: 3,
-      signals: { strong: [], weak: [] },
+      signals: { good: [], moderate: [], poor: [] },
       reasoning: `Evaluation error: ${error.message || "Unknown error"}`,
       questionId: question.id,
     };
