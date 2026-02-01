@@ -323,4 +323,25 @@
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
   }
+
+  .scrollbar-sm::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  .scrollbar-sm::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-sm::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 10px;
+  }
+  .scrollbar-sm::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Target Radix ScrollArea specifically */
+  [data-radix-scroll-area-viewport] {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
 }

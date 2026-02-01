@@ -25,8 +25,40 @@ export function getSession() {
     );
   }
   const pgStore = connectPg(session);
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("[auth] DATABASE_URL is required for session store");
+  }
+
+  // SSL handling for Postgres (not related to browser HTTPS).
+  // - Many managed Postgres providers (e.g., Supabase) require SSL.
+  // - Some poolers may present a certificate chain that fails strict verification in certain environments.
+  //   If you hit `SELF_SIGNED_CERT_IN_CHAIN`, you can either:
+  //     (a) switch to a direct connection string, OR
+  //     (b) provide the CA cert via DATABASE_SSL_CA, OR
+  //     (c) as a last resort, set DATABASE_SSL_REJECT_UNAUTHORIZED=false
+  const databaseSslEnabled =
+    process.env.DATABASE_SSL === "true" ||
+    /[?&]sslmode=require/i.test(databaseUrl) ||
+    /supabase\.co/i.test(databaseUrl);
+  const databaseSslRejectUnauthorized =
+    process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== "false";
+  const databaseSslCa = process.env.DATABASE_SSL_CA
+    ? process.env.DATABASE_SSL_CA.replace(/\\n/g, "\n")
+    : undefined;
+
+  const conObject: any = databaseSslEnabled
+    ? {
+        connectionString: databaseUrl,
+        ssl: {
+          rejectUnauthorized: databaseSslRejectUnauthorized,
+          ...(databaseSslCa ? { ca: databaseSslCa } : {}),
+        },
+      }
+    : { connectionString: databaseUrl };
+
   const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
+    conObject,
     createTableIfMissing: true,
     ttl: Math.floor(sessionTtl / 1000), // connect-pg-simple expects seconds
     tableName: "sessions",

@@ -50,6 +50,8 @@ export class DatabaseStorage implements IStorage {
     "smeNotesText",
     "companyWebsite",
     "interviewDuration",
+    "introMinutes",
+    "closureMinutes",
     "screeningQuestionsJson",
     "competencyRubricJson",
   ] as const;
@@ -62,6 +64,8 @@ export class DatabaseStorage implements IStorage {
     if (Object.prototype.hasOwnProperty.call(raw, "smeNotesText")) payload.smeNotesText = raw.smeNotesText as string | null;
     if (Object.prototype.hasOwnProperty.call(raw, "companyWebsite")) payload.companyWebsite = raw.companyWebsite as string | null;
     if (Object.prototype.hasOwnProperty.call(raw, "interviewDuration")) payload.interviewDuration = raw.interviewDuration as number | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "introMinutes")) payload.introMinutes = raw.introMinutes as number | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "closureMinutes")) payload.closureMinutes = raw.closureMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "screeningQuestionsJson")) payload.screeningQuestionsJson = raw.screeningQuestionsJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
     const updated = await db.project.update({

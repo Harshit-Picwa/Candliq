@@ -58,8 +58,9 @@ export interface Competency {
 
 export interface QuestionRubric {
   typicalReasoning: string;
-  strongSignals: string[];
-  weakSignals: string[];
+  goodSignals: string[];
+  moderateSignals: string[];
+  poorSignals: string[];
   notes: string;
 }
 
@@ -122,11 +123,12 @@ export interface AISuggestion {
 }
 
 export interface AnswerEvaluation {
-  quality: "strong" | "moderate" | "weak";
+  quality: "good" | "moderate" | "poor";
   score: number; // 1-5
   signals: {
-    strong: string[];
-    weak: string[];
+    good: string[];
+    moderate: string[];
+    poor: string[];
   };
   reasoning: string;
   questionId?: string;

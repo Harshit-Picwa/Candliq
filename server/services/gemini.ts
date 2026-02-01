@@ -43,9 +43,12 @@ Instructions:
 3. Ensure questions are well-distributed (not all questions for one competency)
 4. ${companyWebsite ? "Consider the company's culture and values when crafting questions. " : ""}For each question, provide a rubric with:
    - typicalReasoning: What reasoning or approach should a good candidate show
-   - strongSignals: 3-4 specific indicators of a strong answer
-   - weakSignals: 3-4 specific red flags or weak indicators
+   - goodSignals: 2-3 specific indicators of a strong answer
+   - moderateSignals: 2-3 indicators of an average or acceptable answer
+   - poorSignals: 2-3 specific red flags or weak indicators
    - notes: Any special considerations for this question
+
+CRITICAL: You must explicitly consider the Job Description provided above when crafting both the questions and the rubric segments. The questions must be highly relevant to the specific role and requirements described.
 
 IMPORTANT: You must generate exactly ${targetQuestionCount} questions total. Count them carefully.
 
@@ -65,8 +68,9 @@ Respond with a JSON object in this exact format:
       "question": "Tell me about a time you solved a particularly challenging technical problem...",
       "rubric": {
         "typicalReasoning": "The candidate should describe a systematic approach...",
-        "strongSignals": ["Clear problem breakdown", "Multiple approaches considered"],
-        "weakSignals": ["Vague about actual contribution", "No mention of outcome"],
+        "goodSignals": ["Clear problem breakdown", "Multiple approaches considered"],
+        "moderateSignals": ["Solved the problem but with some help", "Reasonable approach but lacked depth"],
+        "poorSignals": ["Vague about actual contribution", "No mention of outcome"],
         "notes": "Pay attention to whether they can articulate the problem clearly"
       },
       "isMandatory": true,
@@ -110,8 +114,9 @@ Only output valid JSON. No markdown code blocks.`;
       question: q.question,
       rubric: {
         typicalReasoning: q.rubric?.typicalReasoning || "",
-        strongSignals: q.rubric?.strongSignals || [],
-        weakSignals: q.rubric?.weakSignals || [],
+        goodSignals: q.rubric?.goodSignals || [],
+        moderateSignals: q.rubric?.moderateSignals || [],
+        poorSignals: q.rubric?.poorSignals || [],
         notes: q.rubric?.notes || "",
       },
       isMandatory: q.isMandatory ?? true,
@@ -143,6 +148,59 @@ export async function regenerateQuestionsWithInstructions(
   interviewDuration?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[] }> {
   return extractCompetenciesAndQuestions(jdText, smeNotes, customInstructions, companyWebsite, interviewDuration);
+}
+
+export async function refineIndividualQuestion(
+  jdText: string,
+  question: ScreeningQuestion,
+  instructions: string
+): Promise<ScreeningQuestion> {
+  const prompt = `You are an expert HR consultant. Refine the following screening interview question based on the custom instructions and the Job Description.
+
+JOB DESCRIPTION:
+${jdText}
+
+CURRENT QUESTION:
+${JSON.stringify(question, null, 2)}
+
+CUSTOM INSTRUCTIONS:
+${instructions}
+
+Instructions:
+1. Refine the question text to be more effective and relevant.
+2. Update the rubric (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) to match the new question.
+3. Keep the same competencyId and id.
+4. Respond with ONLY the refined question object in JSON format.
+
+Only output valid JSON object. No markdown code blocks.`;
+
+  try {
+    if (!apiKey) {
+      throw new Error("GOOGLE_AI_API_KEY is not set.");
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    
+    if (!jsonMatch) {
+      throw new Error("Failed to parse refined question response");
+    }
+
+    const q = JSON.parse(jsonMatch[0]);
+    return {
+      ...q,
+      id: question.id,
+      competencyId: question.competencyId,
+      order: question.order,
+      isMandatory: question.isMandatory,
+    };
+  } catch (error: any) {
+    console.error("[gemini] Refine question error:", error);
+    throw error;
+  }
 }
 
 export async function generateFollowUpSuggestions(
@@ -245,17 +303,18 @@ ${fullTranscript.slice(-5).map(t => `${t.speaker === "interviewer" ? "Interviewe
 
 Evaluate the candidate's answer and respond with a JSON object:
 {
-  "quality": "strong" | "moderate" | "weak",
+  "quality": "good" | "moderate" | "poor",
   "score": 1-5,
-  "strongSignalsFound": ["signal1", "signal2"],
-  "weakSignalsFound": ["signal1", "signal2"],
+  "goodSignalsFound": ["signal1", "signal2"],
+  "moderateSignalsFound": ["signal1", "signal2"],
+  "poorSignalsFound": ["signal1", "signal2"],
   "reasoning": "Brief explanation of why this quality/score was assigned"
 }
 
 Guidelines:
-- "strong": Answer demonstrates most strong signals, clear reasoning, specific examples
-- "moderate": Answer shows some strong signals but also some weak signals or lacks depth
-- "weak": Answer shows weak signals, lacks specifics, or doesn't address the question well
+- "good": Answer demonstrates most good signals, clear reasoning, specific examples
+- "moderate": Answer shows some moderate signals or lacks depth
+- "poor": Answer shows poor signals, lacks specifics, or doesn't address the question well
 - Score: 1-5 (1=very weak, 3=moderate, 5=excellent)
 - List actual signals found in the answer
 - Be objective and evidence-based
@@ -268,7 +327,7 @@ Only output valid JSON. No markdown code blocks.`;
       return {
         quality: "moderate",
         score: 3,
-        signals: { strong: [], weak: [] },
+        signals: { good: [], moderate: [], poor: [] },
         reasoning: "Evaluation unavailable - API key not configured",
         questionId: question.id,
       };
@@ -285,7 +344,7 @@ Only output valid JSON. No markdown code blocks.`;
       return {
         quality: "moderate",
         score: 3,
-        signals: { strong: [], weak: [] },
+        signals: { good: [], moderate: [], poor: [] },
         reasoning: "Failed to parse evaluation",
         questionId: question.id,
       };
@@ -294,11 +353,12 @@ Only output valid JSON. No markdown code blocks.`;
     const parsed = JSON.parse(jsonMatch[0]);
     
     return {
-      quality: parsed.quality === "strong" || parsed.quality === "weak" ? parsed.quality : "moderate",
+      quality: parsed.quality === "good" || parsed.quality === "poor" ? parsed.quality : "moderate",
       score: Math.min(5, Math.max(1, parsed.score || 3)),
       signals: {
-        strong: parsed.strongSignalsFound || [],
-        weak: parsed.weakSignalsFound || [],
+        good: parsed.goodSignalsFound || [],
+        moderate: parsed.moderateSignalsFound || [],
+        poor: parsed.poorSignalsFound || [],
       },
       reasoning: parsed.reasoning || "Evaluation completed",
       questionId: question.id,
@@ -376,8 +436,10 @@ Respond with a JSON object:
 Guidelines:
 - Use the interviewer's ratings as input but adjust based on transcript evidence
 - Provide specific evidence from the transcript for each score
+- Look for Good, Moderate, and Poor signals in the transcript
 - Be balanced - highlight both strengths and areas for improvement
 - The decision should be "Hire", "No-Hire", or "Hold" and be well-justified
+- Explicitly mention if it's a "Strong Hire" in the reason if the evidence is very strong.
 
 Only output valid JSON. No markdown code blocks.`;
 

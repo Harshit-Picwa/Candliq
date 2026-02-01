@@ -513,7 +513,7 @@ export default function InterviewCockpitPage() {
                     {transcript.map((entry) => {
                       const evaluation = entry.evaluation;
                       const qualityColor = evaluation
-                        ? evaluation.quality === "strong"
+                        ? evaluation.quality === "good"
                           ? "bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400"
                           : evaluation.quality === "moderate"
                           ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-700 dark:text-yellow-400"
@@ -536,7 +536,7 @@ export default function InterviewCockpitPage() {
                                 <Badge
                                   variant="outline"
                                   className={`text-xs ${
-                                    evaluation.quality === "strong"
+                                    evaluation.quality === "good"
                                       ? "border-green-500 text-green-700 dark:text-green-400"
                                       : evaluation.quality === "moderate"
                                       ? "border-yellow-500 text-yellow-700 dark:text-yellow-400"
@@ -555,21 +555,31 @@ export default function InterviewCockpitPage() {
                           {evaluation && (
                             <div className="mt-2 pt-2 border-t border-current/20">
                               <div className="text-xs space-y-1">
-                                {evaluation.signals.strong.length > 0 && (
+                                {evaluation.signals.good.length > 0 && (
                                   <div>
-                                    <span className="font-medium text-green-700 dark:text-green-400">✓ Strong signals:</span>
+                                    <span className="font-medium text-green-700 dark:text-green-400">✓ Good signals:</span>
                                     <ul className="list-disc list-inside ml-2 text-muted-foreground">
-                                      {evaluation.signals.strong.map((signal, idx) => (
+                                      {evaluation.signals.good.map((signal, idx) => (
                                         <li key={idx}>{signal}</li>
                                       ))}
                                     </ul>
                                   </div>
                                 )}
-                                {evaluation.signals.weak.length > 0 && (
+                                {evaluation.signals.moderate.length > 0 && (
                                   <div>
-                                    <span className="font-medium text-red-700 dark:text-red-400">⚠ Weak signals:</span>
+                                    <span className="font-medium text-blue-700 dark:text-blue-400">ℹ Moderate signals:</span>
                                     <ul className="list-disc list-inside ml-2 text-muted-foreground">
-                                      {evaluation.signals.weak.map((signal, idx) => (
+                                      {evaluation.signals.moderate.map((signal, idx) => (
+                                        <li key={idx}>{signal}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {evaluation.signals.poor.length > 0 && (
+                                  <div>
+                                    <span className="font-medium text-red-700 dark:text-red-400">⚠ Poor signals:</span>
+                                    <ul className="list-disc list-inside ml-2 text-muted-foreground">
+                                      {evaluation.signals.poor.map((signal, idx) => (
                                         <li key={idx}>{signal}</li>
                                       ))}
                                     </ul>
@@ -673,23 +683,33 @@ export default function InterviewCockpitPage() {
                             <h4 className="text-xs font-medium text-muted-foreground mb-1">What to look for:</h4>
                             <p className="text-sm">{question.rubric.typicalReasoning}</p>
                           </div>
-                          <div className="grid sm:grid-cols-2 gap-3">
+                          <div className="grid sm:grid-cols-3 gap-3">
                             <div className="p-3 rounded-md bg-green-500/10">
                               <h4 className="text-xs font-medium flex items-center gap-1 mb-2">
-                                <CheckCircle className="w-3 h-3 text-green-500" /> Strong
+                                <CheckCircle className="w-3 h-3 text-green-500" /> Good
                               </h4>
                               <ul className="text-xs space-y-1">
-                                {question.rubric.strongSignals.map((s, i) => (
+                                {question.rubric.goodSignals?.map((s, i) => (
+                                  <li key={i}>• {s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="p-3 rounded-md bg-blue-500/10">
+                              <h4 className="text-xs font-medium flex items-center gap-1 mb-2">
+                                <MessageSquare className="w-3 h-3 text-blue-500" /> Moderate
+                              </h4>
+                              <ul className="text-xs space-y-1">
+                                {question.rubric.moderateSignals?.map((s, i) => (
                                   <li key={i}>• {s}</li>
                                 ))}
                               </ul>
                             </div>
                             <div className="p-3 rounded-md bg-amber-500/10">
                               <h4 className="text-xs font-medium flex items-center gap-1 mb-2">
-                                <AlertCircle className="w-3 h-3 text-amber-500" /> Weak
+                                <AlertCircle className="w-3 h-3 text-amber-500" /> Poor
                               </h4>
                               <ul className="text-xs space-y-1">
-                                {question.rubric.weakSignals.map((s, i) => (
+                                {question.rubric.poorSignals?.map((s, i) => (
                                   <li key={i}>• {s}</li>
                                 ))}
                               </ul>

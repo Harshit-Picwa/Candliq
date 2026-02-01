@@ -27,7 +27,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, Interview } from "@shared/schema";
-import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock } from "lucide-react";
+import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock, Settings, Brain } from "lucide-react";
 import { format } from "date-fns";
 
 const statusColors: Record<string, string> = {
@@ -179,15 +179,24 @@ export default function InterviewsListPage() {
             </Dialog>
           </div>
 
-          <div className="flex gap-2 mb-8">
+          <div className="flex gap-2 mb-8 bg-muted/30 p-1 rounded-xl w-fit mx-auto border border-border/50">
             <Link href={`/projects/${projectId}`}>
-              <Button variant="ghost" size="sm">Setup</Button>
+              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
+                <Settings className="w-4 h-4 mr-2" />
+                1. Setup
+              </Button>
             </Link>
             <Link href={`/projects/${projectId}/questions`}>
-              <Button variant="ghost" size="sm">Questions</Button>
+              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
+                <Brain className="w-4 h-4 mr-2" />
+                2. Questions
+              </Button>
             </Link>
             <Link href={`/projects/${projectId}/interviews`}>
-              <Button variant="secondary" size="sm">Interviews</Button>
+              <Button variant="secondary" size="sm" className="rounded-lg px-6">
+                <User className="w-4 h-4 mr-2" />
+                3. Interviews
+              </Button>
             </Link>
           </div>
 

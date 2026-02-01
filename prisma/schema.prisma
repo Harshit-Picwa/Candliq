@@ -49,6 +49,8 @@ model Project {
   smeNotesText          String?   @map("sme_notes_text") @db.Text
   companyWebsite        String?   @map("company_website") @db.VarChar
   interviewDuration     Int?      @map("interview_duration") // Questions duration (skill-set) in minutes
+  introMinutes          Int?      @map("intro_minutes")
+  closureMinutes        Int?      @map("closure_minutes")
   competencyRubricJson  Json?     @map("competency_rubric_json") @db.JsonB
   screeningQuestionsJson Json?    @map("screening_questions_json") @db.JsonB
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp

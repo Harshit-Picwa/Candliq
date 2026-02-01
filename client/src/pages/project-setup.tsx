@@ -12,7 +12,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, Upload, X, CheckCircle, Settings } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, Upload, X, CheckCircle, Settings, User } from "lucide-react";
 
 export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +30,7 @@ export default function ProjectSetupPage() {
   const [interviewDuration, setInterviewDuration] = useState<number>(30);
   const [introMinutes, setIntroMinutes] = useState<number>(2);
   const [closureMinutes, setClosureMinutes] = useState<number>(2);
+  const [totalDuration, setTotalDuration] = useState<number>(34); // Sum of above
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
@@ -42,16 +43,19 @@ export default function ProjectSetupPage() {
       setJdText(project.jdText || "");
       setSmeNotes(project.smeNotesText || "");
       setCompanyWebsite((project as any).companyWebsite || "");
-      setInterviewDuration((project as any).interviewDuration ?? 30);
-      setIntroMinutes((project as any).introMinutes ?? 2);
-      setClosureMinutes((project as any).closureMinutes ?? 2);
+      const duration = (project as any).interviewDuration ?? 30;
+      const intro = (project as any).introMinutes ?? 2;
+      const closure = (project as any).closureMinutes ?? 2;
+      setInterviewDuration(duration);
+      setIntroMinutes(intro);
+      setClosureMinutes(closure);
+      setTotalDuration(duration + intro + closure);
     }
   }, [project]);
 
   const updateProject = useMutation({
     mutationFn: async (data: Partial<Project>) => {
-      const { introMinutes: _i, closureMinutes: _c, ...rest } = data as Record<string, unknown>;
-      return apiRequest("PATCH", `/api/projects/${id}`, rest);
+      return apiRequest("PATCH", `/api/projects/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
@@ -153,6 +157,8 @@ export default function ProjectSetupPage() {
       smeNotesText: smeNotes,
       companyWebsite: companyWebsite || undefined,
       interviewDuration: interviewDuration || undefined,
+      introMinutes: introMinutes || undefined,
+      closureMinutes: closureMinutes || undefined,
     } as any);
   };
 
@@ -170,6 +176,8 @@ export default function ProjectSetupPage() {
         smeNotesText: smeNotes,
         companyWebsite: companyWebsite || undefined,
         interviewDuration: interviewDuration || undefined,
+        introMinutes: introMinutes || undefined,
+        closureMinutes: closureMinutes || undefined,
       } as any);
       
       // Wait a moment for the database to update
@@ -256,15 +264,24 @@ export default function ProjectSetupPage() {
             </Button>
           </div>
 
-          <div className="flex gap-2 mb-8">
+          <div className="flex gap-2 mb-8 bg-muted/30 p-1 rounded-xl w-fit mx-auto border border-border/50">
             <Link href={`/projects/${id}`}>
-              <Button variant="secondary" size="sm">Setup</Button>
+              <Button variant={setupStep ? "secondary" : "ghost"} size="sm" className="rounded-lg px-6">
+                <Settings className="w-4 h-4 mr-2" />
+                1. Setup
+              </Button>
             </Link>
             <Link href={`/projects/${id}/questions`}>
-              <Button variant="ghost" size="sm">Questions</Button>
+              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
+                <Brain className="w-4 h-4 mr-2" />
+                2. Questions
+              </Button>
             </Link>
             <Link href={`/projects/${id}/interviews`}>
-              <Button variant="ghost" size="sm">Interviews</Button>
+              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
+                <User className="w-4 h-4 mr-2" />
+                3. Interviews
+              </Button>
             </Link>
           </div>
 
@@ -272,7 +289,7 @@ export default function ProjectSetupPage() {
             {[
               { step: 1 as const, label: "Campaign Settings", icon: Settings },
               { step: 2 as const, label: "Job Description", icon: FileText },
-              { step: 3 as const, label: "Notes", icon: Brain },
+              { step: 3 as const, label: "Refine Screening", icon: Brain },
             ].map(({ step, label, icon: Icon }, i) => (
               <div key={step} className="flex items-center flex-1 last:flex-initial">
                 <button
@@ -322,52 +339,29 @@ export default function ProjectSetupPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="interview-duration">Questions duration in interview (minutes)</Label>
+                  <Label htmlFor="total-duration">Total Interview Duration (minutes)</Label>
                   <select
-                    id="interview-duration"
-                    value={interviewDuration}
-                    onChange={(e) => setInterviewDuration(parseInt(e.target.value))}
+                    id="total-duration"
+                    value={totalDuration}
+                    onChange={(e) => {
+                      const total = parseInt(e.target.value);
+                      setTotalDuration(total);
+                      // Calculate interview duration: total - intro (2) - closure (2)
+                      setIntroMinutes(2);
+                      setClosureMinutes(2);
+                      setInterviewDuration(total - 4);
+                    }}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
-                    <option value={10}>10 minutes</option>
                     <option value={15}>15 minutes</option>
                     <option value={20}>20 minutes</option>
                     <option value={30}>30 minutes</option>
                     <option value={45}>45 minutes</option>
+                    <option value={60}>60 minutes</option>
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    Time dedicated to skill-set questions only. Question count scales with duration.
+                    Total time for the entire interview process.
                   </p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="intro-minutes">Introduction time (minutes)</Label>
-                    <select
-                      id="intro-minutes"
-                      value={introMinutes}
-                      onChange={(e) => setIntroMinutes(parseInt(e.target.value))}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <option value={0}>0</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                      <option value={5}>5</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="closure-minutes">Conversation closure time (minutes)</Label>
-                    <select
-                      id="closure-minutes"
-                      value={closureMinutes}
-                      onChange={(e) => setClosureMinutes(parseInt(e.target.value))}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      <option value={0}>0</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                      <option value={5}>5</option>
-                    </select>
-                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="company-website">Company website (optional)</Label>
@@ -426,7 +420,7 @@ export default function ProjectSetupPage() {
           {setupStep === 3 && (
             <Card className="rounded-2xl border-card-border/80 shadow-sm card-elevated overflow-hidden">
               <CardHeader>
-                <CardTitle>Notes</CardTitle>
+                <CardTitle>Refine Screening</CardTitle>
                 <CardDescription>
                   Add subject matter expert notes: ideal candidate profile, red flags, or skills to probe.
                 </CardDescription>

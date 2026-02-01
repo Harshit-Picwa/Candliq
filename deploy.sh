@@ -45,7 +45,11 @@ echo -e "${GREEN}✓ Prerequisites checked${NC}"
 
 # Install dependencies
 echo "📦 Installing dependencies..."
-npm install
+if [ -f package-lock.json ]; then
+    npm ci
+else
+    npm install
+fi
 
 # Generate Prisma Client
 echo "🔧 Generating Prisma Client..."

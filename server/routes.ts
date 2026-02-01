@@ -3,11 +3,11 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
-import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality } from "./services/gemini";
+import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
 import { extractTextFromPDF, validatePDF } from "./services/pdf-parser";
 import { uploadPDF } from "./middleware/upload";
-import type { TranscriptEntry, InterviewNotes, ScreeningQuestion } from "@shared/schema";
+import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project } from "@shared/schema";
 
 // Extend Express.User type to include our user properties
 declare global {
@@ -83,14 +83,14 @@ export async function registerRoutes(
   app.patch("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
       const body = { ...req.body } as Record<string, unknown>;
-      delete body.introMinutes;
-      delete body.closureMinutes;
       const allowed = [
         "title",
         "jdText",
         "smeNotesText",
         "companyWebsite",
         "interviewDuration",
+        "introMinutes",
+        "closureMinutes",
         "screeningQuestionsJson",
         "competencyRubricJson",
       ] as const;
@@ -209,6 +209,39 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[regenerate-questions] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to regenerate questions", details: error?.message });
+    }
+  });
+
+  app.post("/api/projects/:id/refine-question", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(parseInt(req.params.id));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project.jdText) return res.status(400).json({ error: "Job description is required" });
+
+      const { questionId, customInstructions } = req.body;
+      if (!questionId) return res.status(400).json({ error: "Question ID is required" });
+
+      const questions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
+      const questionIndex = questions.findIndex(q => q.id === questionId);
+      if (questionIndex === -1) return res.status(404).json({ error: "Question not found" });
+
+      console.log(`[refine-question] Refining question ${questionId} for project ${req.params.id}`);
+      const refinedQuestion = await refineIndividualQuestion(
+        project.jdText,
+        questions[questionIndex],
+        customInstructions || "Refine this question for better clarity and relevance."
+      );
+
+      questions[questionIndex] = refinedQuestion;
+
+      const updated = await storage.updateProject(project.id, {
+        screeningQuestionsJson: questions,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[refine-question] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to refine question", details: error?.message });
     }
   });
 

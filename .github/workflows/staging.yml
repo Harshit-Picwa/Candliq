@@ -1,0 +1,73 @@
+name: Main Staging CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  ci-check:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Type Check
+        run: npm run check
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy' }}
+
+      - name: Build Application
+        run: npm run build
+
+  deploy:
+    name: Deploy to Staging (EC2)
+    needs: ci-check
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Execute remote ssh commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: 22
+          command_timeout: 30m
+          script: |
+            PROJECT_PATH="/picwa/Candliq"
+            
+            if [ ! -d "$PROJECT_PATH" ]; then
+              echo "❌ Error: Directory $PROJECT_PATH not found on server."
+              exit 1
+            fi
+
+            cd "$PROJECT_PATH"
+            
+            echo "🚀 Starting deployment from main branch"
+            
+            git stash
+            git fetch origin
+            git checkout main || git checkout master
+            git pull origin main || git pull origin master
+            
+            chmod +x deploy.sh
+            ./deploy.sh
+            
+            echo "✅ Deployment completed successfully!"
