@@ -17,15 +17,15 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Check if running as root
-if [ "$EUID" -eq 0 ]; then 
-   echo -e "${RED}Please do not run as root${NC}"
-   exit 1
-fi
+# Load NVM if it exists to ensure node/npm are in PATH
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+# Also check common locations
+export PATH="$PATH:/usr/local/bin:/usr/bin:/bin"
 
 # Check Node.js
 if ! command -v node &> /dev/null; then
-    echo -e "${RED}Node.js is not installed. Please install Node.js first.${NC}"
+    echo -e "${RED}Node.js is not installed or not in PATH. Please install Node.js first.${NC}"
     exit 1
 fi
 

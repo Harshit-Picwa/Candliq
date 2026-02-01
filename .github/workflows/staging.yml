@@ -51,6 +51,10 @@ jobs:
           port: 22
           command_timeout: 30m
           script: |
+            set -e
+            # Explicitly add Node.js path to environment
+            export PATH="/home/ubuntu/.nvm/versions/node/v20.17.0/bin:$PATH"
+            
             PROJECT_PATH="/picwa/Candliq"
             
             if [ ! -d "$PROJECT_PATH" ]; then
