@@ -517,8 +517,8 @@ export default function QuestionsSetupPage() {
                   </div>
 
                   <div className="grid sm:grid-cols-2 gap-4 pt-8">
-                    <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer" asChild>
-                      <Link href={`/projects/${id}/interviews`}>
+                    <Link href={`/projects/${id}/interviews`}>
+                      <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer">
                         <div className="space-y-4">
                           <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                             <User className="w-6 h-6 text-primary" />
@@ -528,11 +528,11 @@ export default function QuestionsSetupPage() {
                             <p className="text-sm text-muted-foreground font-medium">Invite applicants to start their screening session.</p>
                           </div>
                         </div>
-                      </Link>
-                    </Card>
+                      </Card>
+                    </Link>
 
-                    <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer" asChild>
-                      <Link href="/dashboard">
+                    <Link href="/dashboard">
+                      <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer">
                         <div className="space-y-4">
                           <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center group-hover:scale-110 transition-transform">
                             <Settings className="w-6 h-6 text-muted-foreground" />
@@ -542,8 +542,8 @@ export default function QuestionsSetupPage() {
                             <p className="text-sm text-muted-foreground font-medium">View your workspace and manage other projects.</p>
                           </div>
                         </div>
-                      </Link>
-                    </Card>
+                      </Card>
+                    </Link>
                   </div>
 
                   <div className="pt-8 border-t border-border/40">
@@ -798,7 +798,7 @@ export default function QuestionsSetupPage() {
                                                 ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
                                                 : "border-border/60 bg-muted hover:border-primary/40"
                                             }`}
-                                            onClick={(e) => {
+                                            onClick={(e: React.MouseEvent) => {
                                               e.stopPropagation();
                                               const newSet = new Set(selectedForRefine);
                                               if (newSet.has(question.id)) newSet.delete(question.id);
@@ -819,7 +819,7 @@ export default function QuestionsSetupPage() {
                                               variant="ghost"
                                               size="icon"
                                               className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
-                                              onClick={(e) => {
+                                              onClick={(e: React.MouseEvent) => {
                                                 e.stopPropagation();
                                                 moveQuestion(question.id, "up");
                                               }}
@@ -831,7 +831,7 @@ export default function QuestionsSetupPage() {
                                               variant="ghost"
                                               size="icon"
                                               className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
-                                              onClick={(e) => {
+                                              onClick={(e: React.MouseEvent) => {
                                                 e.stopPropagation();
                                                 moveQuestion(question.id, "down");
                                               }}
@@ -846,8 +846,8 @@ export default function QuestionsSetupPage() {
                                           <div className="flex items-start justify-between gap-4 mb-3">
                                             <AutoResizeTextarea
                                               value={question.question}
-                                              onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
-                                              onClick={(e) => e.stopPropagation()}
+                                              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateQuestion(question.id, { question: e.target.value })}
+                                              onClick={(e: React.MouseEvent) => e.stopPropagation()}
                                               className={`w-full text-base font-semibold leading-relaxed tracking-tight ${
                                                 invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
                                               }`}
@@ -861,7 +861,7 @@ export default function QuestionsSetupPage() {
                                                       variant="ghost"
                                                       size="icon"
                                                       className="h-9 w-9 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 border border-transparent hover:border-primary/20"
-                                                      onClick={(e) => {
+                                                      onClick={(e: React.MouseEvent) => {
                                                         e.stopPropagation();
                                                         setSelectedQuestionId(question.id);
                                                         setIsRefiningIndividual(true);
@@ -879,7 +879,7 @@ export default function QuestionsSetupPage() {
                                                       variant="ghost"
                                                       size="icon"
                                                       className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
-                                                      onClick={(e) => {
+                                                      onClick={(e: React.MouseEvent) => {
                                                         e.stopPropagation();
                                                         deleteQuestion(question.id);
                                                       }}
@@ -896,7 +896,7 @@ export default function QuestionsSetupPage() {
                                           <div className="flex items-center justify-between border-t border-border/40 pt-4">
                                             <div 
                                               className="flex items-center gap-2.5 cursor-pointer group/check"
-                                              onClick={(e) => {
+                                              onClick={(e: React.MouseEvent) => {
                                                 e.stopPropagation();
                                                 toggleMandatory(question.id);
                                               }}

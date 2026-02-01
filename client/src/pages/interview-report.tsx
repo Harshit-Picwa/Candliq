@@ -23,7 +23,8 @@ import {
   Sparkles,
   ChevronRight,
   Trophy,
-  AlertTriangle
+  AlertTriangle,
+  Info
 } from "lucide-react";
 import { format } from "date-fns";
 

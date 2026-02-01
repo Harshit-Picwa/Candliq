@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Briefcase, FileText, Mic, Brain, CheckCircle, ClipboardList, ArrowRight, Sparkles, Target, Zap, ShieldCheck } from "lucide-react";
+import { Briefcase, FileText, Mic, Brain, CheckCircle, ClipboardList, ArrowRight, Sparkles, Target, Zap, ShieldCheck, User } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 
