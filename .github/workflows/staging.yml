@@ -68,8 +68,8 @@ jobs:
             
             git stash
             git fetch origin
-            git checkout main || git checkout master
-            git pull origin main || git pull origin master
+            git checkout -f main || git checkout -f master
+            git reset --hard origin/main || git reset --hard origin/master
             
             chmod +x deploy.sh
             ./deploy.sh
