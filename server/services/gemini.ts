@@ -203,6 +203,64 @@ Only output valid JSON object. No markdown code blocks.`;
   }
 }
 
+export async function refineMultipleQuestions(
+  jdText: string,
+  questions: ScreeningQuestion[],
+  instructions: string
+): Promise<ScreeningQuestion[]> {
+  const prompt = `You are an expert HR consultant. Refine the following ${questions.length} screening interview questions based on the custom instructions and the Job Description.
+
+JOB DESCRIPTION:
+${jdText}
+
+CURRENT QUESTIONS:
+${JSON.stringify(questions, null, 2)}
+
+CUSTOM INSTRUCTIONS:
+${instructions}
+
+Instructions:
+1. Refine each question text to be more effective and relevant according to the instructions.
+2. Update the rubrics (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) for each refined question.
+3. Keep the same competencyId and id for each question.
+4. Respond with a JSON object containing a "questions" array of refined question objects.
+
+Respond with ONLY the JSON object. No markdown code blocks.`;
+
+  try {
+    if (!apiKey) {
+      throw new Error("GOOGLE_AI_API_KEY is not set.");
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    
+    if (!jsonMatch) {
+      throw new Error("Failed to parse refined questions response");
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const refinedQuestions = parsed.questions || [];
+
+    return refinedQuestions.map((refined: any) => {
+      const original = questions.find(q => q.id === refined.id);
+      return {
+        ...refined,
+        id: refined.id,
+        competencyId: refined.competencyId || original?.competencyId,
+        order: refined.order || original?.order,
+        isMandatory: refined.isMandatory ?? original?.isMandatory ?? true,
+      };
+    });
+  } catch (error: any) {
+    console.error("[gemini] Refine multiple questions error:", error);
+    throw error;
+  }
+}
+
 export async function generateFollowUpSuggestions(
   transcript: TranscriptEntry[],
   competencies: Competency[],

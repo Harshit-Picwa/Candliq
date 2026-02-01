@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
-import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion } from "./services/gemini";
+import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
 import { extractTextFromPDF, validatePDF } from "./services/pdf-parser";
 import { uploadPDF } from "./middleware/upload";
@@ -242,6 +242,48 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[refine-question] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to refine question", details: error?.message });
+    }
+  });
+
+  app.post("/api/projects/:id/refine-selected-questions", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(parseInt(req.params.id));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project.jdText) return res.status(400).json({ error: "Job description is required" });
+
+      const { questionIds, customInstructions } = req.body;
+      if (!questionIds || !Array.isArray(questionIds) || questionIds.length === 0) {
+        return res.status(400).json({ error: "Question IDs are required" });
+      }
+
+      const allQuestions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
+      const questionsToRefine = allQuestions.filter(q => questionIds.includes(q.id));
+      
+      if (questionsToRefine.length === 0) {
+        return res.status(404).json({ error: "No matching questions found" });
+      }
+
+      console.log(`[refine-selected] Refining ${questionsToRefine.length} questions for project ${req.params.id}`);
+      const refinedBatch = await refineMultipleQuestions(
+        project.jdText,
+        questionsToRefine,
+        customInstructions || "Refine these questions for better clarity and relevance."
+      );
+
+      // Merge refined questions back into all questions
+      const updatedQuestions = allQuestions.map(q => {
+        const refined = refinedBatch.find(r => r.id === q.id);
+        return refined || q;
+      });
+
+      const updated = await storage.updateProject(project.id, {
+        screeningQuestionsJson: updatedQuestions,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[refine-selected] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to refine selected questions", details: error?.message });
     }
   });
 

@@ -344,4 +344,19 @@
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
   }
+
+  .scrollbar-visible [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+    width: 6px;
+    display: block;
+  }
+  .scrollbar-visible [data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-visible [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.2);
+    border-radius: 10px;
+  }
+  .scrollbar-visible [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.4);
+  }
 }

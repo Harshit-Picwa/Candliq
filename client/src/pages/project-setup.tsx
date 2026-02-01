@@ -12,7 +12,8 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, Upload, X, CheckCircle, Settings, User } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, CheckCircle, Settings, User, Globe, Clock, Info } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,11 +32,14 @@ export default function ProjectSetupPage() {
   const [introMinutes, setIntroMinutes] = useState<number>(2);
   const [closureMinutes, setClosureMinutes] = useState<number>(2);
   const [totalDuration, setTotalDuration] = useState<number>(34); // Sum of above
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
   const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stepParam = params.get("step");
+    if (stepParam === "2") setSetupStep(2);
+    if (stepParam === "3") setSetupStep(3);
+  }, []);
 
   useEffect(() => {
     if (project) {
@@ -63,57 +67,6 @@ export default function ProjectSetupPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to save changes.", variant: "destructive" });
-    },
-  });
-
-  const uploadPDF = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("pdf", file);
-      
-      setUploading(true);
-      setUploadProgress(0);
-      
-      // Simulate progress (since we can't track actual upload progress easily)
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 10, 90));
-      }, 200);
-      
-      try {
-        const response = await fetch(`/api/projects/${id}/upload-jd`, {
-          method: "POST",
-          body: formData,
-          credentials: "include",
-        });
-        
-        clearInterval(progressInterval);
-        setUploadProgress(100);
-        
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || "Upload failed");
-        }
-        
-        const result = await response.json();
-        return result;
-      } finally {
-        setTimeout(() => {
-          setUploading(false);
-          setUploadProgress(0);
-        }, 500);
-      }
-    },
-    onSuccess: (data) => {   
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
-      setJdText(data.jdText || "");
-      toast({ title: "PDF uploaded", description: "Text extracted from PDF successfully." });
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Upload failed", 
-        description: error?.message || "Failed to upload PDF.", 
-        variant: "destructive" 
-      });
     },
   });
 
@@ -169,7 +122,6 @@ export default function ProjectSetupPage() {
     }
     
     try {
-      // First, save the project with the JD
       await updateProject.mutateAsync({ 
         title, 
         jdText, 
@@ -180,10 +132,7 @@ export default function ProjectSetupPage() {
         closureMinutes: closureMinutes || undefined,
       } as any);
       
-      // Wait a moment for the database to update
       await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Then generate questions
       generateQuestions.mutate();
     } catch (error: any) {
       toast({ 
@@ -191,45 +140,6 @@ export default function ProjectSetupPage() {
         description: error?.message || "Failed to save project before generating questions.", 
         variant: "destructive" 
       });
-    }
-  };
-
-  const handleFileSelect = (file: File) => {
-    if (file.type !== "application/pdf") {
-      toast({ title: "Invalid file type", description: "Only PDF files are allowed.", variant: "destructive" });
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "File too large", description: "PDF must be less than 10MB.", variant: "destructive" });
-      return;
-    }
-    setUploadedFileName(file.name);
-    uploadPDF.mutate(file);
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFileSelect(e.target.files[0]);
     }
   };
 
@@ -251,135 +161,144 @@ export default function ProjectSetupPage() {
     <DesktopOnlyGuard>
       <div className="min-h-screen page-gradient">
         <Header />
-        <main className="max-w-4xl mx-auto px-8 py-12">
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="icon" asChild>
+        <main className="max-w-5xl mx-auto px-8 py-12">
+          <div className="flex items-center gap-4 mb-8">
+            <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background/80">
               <Link href="/dashboard">
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
               </Link>
             </Button>
-            <h1 className="text-xl font-bold tracking-tight flex-1">Setup</h1>
-            <Button onClick={handleSave} disabled={updateProject.isPending} variant="outline" data-testid="button-save">
-              {updateProject.isPending ? "Saving..." : "Save"}
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold py-0 h-5 px-2 rounded-md bg-background/50 border-primary/20 text-primary/80">
+                  Project Setup
+                </Badge>
+              </div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{title || "New Project"}</h1>
+            </div>
+            <Button onClick={handleSave} disabled={updateProject.isPending} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
+              {updateProject.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
+              )}
+              Save Changes
             </Button>
           </div>
 
-          <div className="flex gap-2 mb-8 bg-muted/30 p-1 rounded-xl w-fit mx-auto border border-border/50">
-            <Link href={`/projects/${id}`}>
-              <Button variant={setupStep ? "secondary" : "ghost"} size="sm" className="rounded-lg px-6">
-                <Settings className="w-4 h-4 mr-2" />
-                1. Setup
-              </Button>
-            </Link>
-            <Link href={`/projects/${id}/questions`}>
-              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
-                <Brain className="w-4 h-4 mr-2" />
-                2. Questions
-              </Button>
-            </Link>
-            <Link href={`/projects/${id}/interviews`}>
-              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
-                <User className="w-4 h-4 mr-2" />
-                3. Interviews
-              </Button>
-            </Link>
-          </div>
-
-          <div className="flex items-center mb-10">
-            {[
-              { step: 1 as const, label: "Campaign Settings", icon: Settings },
-              { step: 2 as const, label: "Job Description", icon: FileText },
-              { step: 3 as const, label: "Refine Screening", icon: Brain },
-            ].map(({ step, label, icon: Icon }, i) => (
-              <div key={step} className="flex items-center flex-1 last:flex-initial">
-                <button
-                  type="button"
-                  onClick={() => setSetupStep(step)}
-                  className={`flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm font-medium transition-all shrink-0 ${
-                    setupStep === step
-                      ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary/20"
-                      : "bg-card border border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  }`}
-                  data-testid={step === 1 ? "step-campaign" : step === 2 ? "step-jd" : "step-notes"}
-                >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${
-                    setupStep === step ? "bg-primary-foreground/20" : "bg-muted"
-                  }`}>
-                    {step}
-                  </span>
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="hidden sm:inline">{label}</span>
-                </button>
-                {i < 2 && (
-                  <div className={`flex-1 h-0.5 mx-2 rounded-full transition-colors ${
-                    setupStep > step ? "bg-primary/40" : "bg-border"
-                  }`} />
-                )}
-              </div>
-            ))}
+          <div className="flex items-center justify-center mb-12">
+            <div className="flex items-center w-full max-w-3xl bg-card/40 backdrop-blur-sm p-2 rounded-2xl border border-border/40 shadow-sm">
+              {[
+                { step: 1 as const, label: "Campaign", icon: Settings },
+                { step: 2 as const, label: "Job Description", icon: FileText },
+                { step: 3 as const, label: "Refine", icon: Brain },
+              ].map(({ step, label, icon: Icon }, i) => (
+                <div key={step} className="flex items-center flex-1 last:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => setSetupStep(step)}
+                    className={`flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-bold transition-all w-full justify-center ${
+                      setupStep === step
+                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 ring-1 ring-primary/20"
+                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                    }`}
+                  >
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-xs font-black ${
+                      setupStep === step ? "bg-primary-foreground/20 text-white" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {step}
+                    </div>
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">{label}</span>
+                  </button>
+                  {i < 2 && (
+                    <div className="mx-2 text-muted-foreground/30">
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           {setupStep === 1 && (
-            <Card className="rounded-2xl border-card-border/80 shadow-sm card-elevated overflow-hidden">
-              <CardHeader>
-                <CardTitle>Campaign Settings</CardTitle>
-                <CardDescription>
-                  Configure project name, interview timing, and company information.
+            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
+              <CardHeader className="p-10 pb-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <Settings className="w-5 h-5 text-primary" />
+                  </div>
+                  <CardTitle className="text-2xl font-black tracking-tight">Campaign Settings</CardTitle>
+                </div>
+                <CardDescription className="text-base font-medium ml-13">
+                  Configure the foundational details for your hiring project.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="project-title">Project title</Label>
-                  <Input
-                    id="project-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g. Senior Frontend Engineer"
-                    data-testid="input-project-title"
-                  />
+              <CardContent className="p-10 pt-0 space-y-8">
+                <div className="grid gap-8">
+                  <div className="space-y-3">
+                    <Label htmlFor="project-title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Project Title</Label>
+                    <Input
+                      id="project-title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Senior Frontend Engineer"
+                      className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                      data-testid="input-project-title"
+                    />
+                  </div>
+                  
+                  <div className="grid md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <Label htmlFor="total-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                        <Clock className="w-3 h-3" />
+                        Total Duration
+                      </Label>
+                      <div className="relative">
+                        <select
+                          id="total-duration"
+                          value={totalDuration}
+                          onChange={(e) => {
+                            const total = parseInt(e.target.value);
+                            setTotalDuration(total);
+                            setIntroMinutes(2);
+                            setClosureMinutes(2);
+                            setInterviewDuration(total - 4);
+                          }}
+                          className="h-14 w-full rounded-2xl border border-border/60 bg-background/50 px-5 text-lg font-semibold outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none transition-all cursor-pointer"
+                        >
+                          <option value={15}>15 Minutes</option>
+                          <option value={20}>20 Minutes</option>
+                          <option value={30}>30 Minutes</option>
+                          <option value={45}>45 Minutes</option>
+                          <option value={60}>60 Minutes</option>
+                        </select>
+                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
+                          <ChevronRight className="w-5 h-5 rotate-90" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                        <Globe className="w-3 h-3" />
+                        Company Website
+                      </Label>
+                      <Input
+                        id="company-website"
+                        type="url"
+                        value={companyWebsite}
+                        onChange={(e) => setCompanyWebsite(e.target.value)}
+                        placeholder="https://company.com"
+                        className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="total-duration">Total Interview Duration (minutes)</Label>
-                  <select
-                    id="total-duration"
-                    value={totalDuration}
-                    onChange={(e) => {
-                      const total = parseInt(e.target.value);
-                      setTotalDuration(total);
-                      // Calculate interview duration: total - intro (2) - closure (2)
-                      setIntroMinutes(2);
-                      setClosureMinutes(2);
-                      setInterviewDuration(total - 4);
-                    }}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <option value={15}>15 minutes</option>
-                    <option value={20}>20 minutes</option>
-                    <option value={30}>30 minutes</option>
-                    <option value={45}>45 minutes</option>
-                    <option value={60}>60 minutes</option>
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Total time for the entire interview process.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="company-website">Company website (optional)</Label>
-                  <Input
-                    id="company-website"
-                    type="url"
-                    value={companyWebsite}
-                    onChange={(e) => setCompanyWebsite(e.target.value)}
-                    placeholder="https://example.com"
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    AI will use this to align questions with company culture.
-                  </p>
-                </div>
-                <div className="flex justify-end pt-4">
-                  <Button onClick={() => setSetupStep(2)} className="gap-2 shadow-sm" data-testid="button-next-step-1">
-                    Next
+
+                <div className="flex justify-end pt-6">
+                  <Button onClick={() => setSetupStep(2)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12">
+                    Next: Job Description
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
@@ -388,28 +307,48 @@ export default function ProjectSetupPage() {
           )}
 
           {setupStep === 2 && (
-            <Card className="rounded-2xl border-card-border/80 shadow-sm card-elevated overflow-hidden">
-              <CardHeader>
-                <CardTitle>Job Description</CardTitle>
-                <CardDescription>
-                  Paste the job description. It will be used to extract competencies and generate screening questions.
+            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
+              <CardHeader className="p-10 pb-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-primary" />
+                    </div>
+                    <CardTitle className="text-2xl font-black tracking-tight">Job Description</CardTitle>
+                  </div>
+                </div>
+                <CardDescription className="text-base font-medium ml-13 mt-2">
+                  Paste the JD below. Our AI will analyze it to generate relevant questions.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <Textarea
-                  value={jdText}
-                  onChange={(e) => setJdText(e.target.value)}
-                  placeholder="Paste the full job description here..."
-                  className="min-h-[300px] font-mono text-sm"
-                  data-testid="textarea-jd"
-                />
-                <div className="flex justify-between pt-4">
-                  <Button variant="outline" onClick={() => setSetupStep(1)} className="gap-2" data-testid="button-back-step-2">
+              <CardContent className="p-10 pt-0 space-y-6">
+                <div className="relative group">
+                  <Textarea
+                    value={jdText}
+                    onChange={(e) => setJdText(e.target.value)}
+                    placeholder="Paste the full job description here..."
+                    className="min-h-[400px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
+                    data-testid="textarea-jd"
+                  />
+                  {jdText.length === 0 && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-40 group-hover:opacity-60 transition-opacity">
+                      <div className="text-center space-y-4">
+                        <div className="h-16 w-16 rounded-[1.5rem] bg-muted mx-auto flex items-center justify-center">
+                          <FileText className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Empty Job Description</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex justify-between items-center pt-6">
+                  <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2" data-testid="button-back-step-2">
                     <ChevronLeft className="w-4 h-4" />
                     Back
                   </Button>
-                  <Button onClick={() => setSetupStep(3)} className="gap-2 shadow-sm" data-testid="button-next-step-2">
-                    Next
+                  <Button onClick={() => setSetupStep(3)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12" disabled={!jdText.trim()}>
+                    Next: Refine Criteria
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
@@ -418,50 +357,67 @@ export default function ProjectSetupPage() {
           )}
 
           {setupStep === 3 && (
-            <Card className="rounded-2xl border-card-border/80 shadow-sm card-elevated overflow-hidden">
-              <CardHeader>
-                <CardTitle>Refine Screening</CardTitle>
-                <CardDescription>
-                  Add subject matter expert notes: ideal candidate profile, red flags, or skills to probe.
+            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
+              <CardHeader className="p-10 pb-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <Brain className="w-5 h-5 text-primary" />
+                  </div>
+                  <CardTitle className="text-2xl font-black tracking-tight">Refine Screening</CardTitle>
+                </div>
+                <CardDescription className="text-base font-medium ml-13">
+                  Add custom instructions to guide the AI in generating the perfect screening questions.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <Textarea
-                  value={smeNotes}
-                  onChange={(e) => setSmeNotes(e.target.value)}
-                  placeholder="E.g., 'Must have experience with distributed systems. Watch for red flags around collaboration...'"
-                  className="min-h-[240px]"
-                  data-testid="textarea-sme"
-                />
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6">
-                  <Button variant="outline" onClick={() => setSetupStep(2)} className="gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
+              <CardContent className="p-10 pt-0 space-y-8">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 px-1 text-primary">
+                    <Info className="w-4 h-4" />
+                    <span className="text-xs font-black uppercase tracking-widest">SME Guidance (Optional)</span>
+                  </div>
+                  <Textarea
+                    value={smeNotes}
+                    onChange={(e) => setSmeNotes(e.target.value)}
+                    placeholder="E.g., 'Focus heavily on architectural decisions' or 'Ask about experience with high-traffic systems'..."
+                    className="min-h-[300px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
+                    data-testid="textarea-sme"
+                  />
+                </div>
+
+                <div className="p-6 rounded-[2rem] bg-primary/[0.03] border border-primary/10 flex items-center gap-6">
+                  <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-7 h-7 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">AI Ready</h4>
+                    <p className="text-sm text-muted-foreground font-medium">Click below to extract competencies and generate tailored rubrics.</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6">
+                  <Button variant="ghost" onClick={() => setSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
                     <ChevronLeft className="w-4 h-4" />
                     Back
                   </Button>
-                  <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
-                    <div className="hidden sm:block text-sm text-muted-foreground">
-                      AI will extract competencies and create questions with rubrics.
-                    </div>
-                    <Button
-                      onClick={handleGenerate}
-                      disabled={generateQuestions.isPending || !jdText.trim()}
-                      className="gap-2 w-full sm:w-auto shadow-md hover:shadow-lg transition-all bg-primary hover:bg-primary/90"
-                      data-testid="button-generate-questions"
-                    >
-                      {generateQuestions.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          Generate Questions
-                          <ChevronRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={generateQuestions.isPending || !jdText.trim()}
+                    className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    data-testid="button-generate-questions"
+                  >
+                    {generateQuestions.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating Rubric...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Generate Questions
+                        <ChevronRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

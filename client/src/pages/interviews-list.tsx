@@ -27,19 +27,25 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, Interview } from "@shared/schema";
-import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock, Settings, Brain } from "lucide-react";
+import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock, Settings, Brain, ChevronRight, Mail, Calendar, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
-const statusColors: Record<string, string> = {
-  draft: "secondary",
-  in_progress: "default",
-  completed: "outline",
-};
-
-const statusLabels: Record<string, string> = {
-  draft: "Draft",
-  in_progress: "In Progress",
-  completed: "Completed",
+const statusStyles: Record<string, { variant: any, className: string, label: string }> = {
+  draft: { 
+    variant: "secondary", 
+    className: "bg-muted text-muted-foreground border-transparent",
+    label: "Draft" 
+  },
+  in_progress: { 
+    variant: "default", 
+    className: "bg-primary/10 text-primary border-primary/20 animate-pulse",
+    label: "In Progress" 
+  },
+  completed: { 
+    variant: "outline", 
+    className: "bg-green-500/10 text-green-600 border-green-500/20",
+    label: "Completed" 
+  },
 };
 
 export default function InterviewsListPage() {
@@ -100,7 +106,7 @@ export default function InterviewsListPage() {
       <DesktopOnlyGuard>
         <div className="min-h-screen page-gradient">
           <Header />
-          <main className="max-w-4xl mx-auto px-8 py-12">
+          <main className="max-w-5xl mx-auto px-8 py-12">
             <Skeleton className="h-8 w-64 mb-8 rounded-lg" />
             <div className="space-y-4">
               {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
@@ -115,63 +121,73 @@ export default function InterviewsListPage() {
     <DesktopOnlyGuard>
       <div className="min-h-screen page-gradient">
         <Header />
-        <main className="max-w-4xl mx-auto px-8 py-12">
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="icon" asChild>
+        <main className="max-w-5xl mx-auto px-8 py-12">
+          <div className="flex items-center gap-4 mb-8">
+            <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background/80">
               <Link href={`/projects/${projectId}`}>
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
               </Link>
             </Button>
             <div className="flex-1">
-              <h1 className="text-2xl font-bold tracking-tight">{project?.title}</h1>
-              <p className="text-muted-foreground text-sm mt-0.5">Interviews</p>
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold py-0 h-5 px-2 rounded-md bg-background/50 border-primary/20 text-primary/80">
+                  Project Interviews
+                </Badge>
+              </div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{project?.title}</h1>
             </div>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button className="shadow-sm" data-testid="button-create-interview">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Interview
+                <Button className="rounded-xl font-bold shadow-lg shadow-primary/20 gap-2" data-testid="button-create-interview">
+                  <Plus className="w-4 h-4 stroke-[3]" />
+                  Add Candidate
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="rounded-3xl border-border/40 shadow-2xl">
                 <form onSubmit={handleCreate}>
-                  <DialogHeader>
-                    <DialogTitle>New interview</DialogTitle>
-                    <DialogDescription>
-                      Add candidate details to start a new interview session.
+                  <DialogHeader className="space-y-3">
+                    <DialogTitle className="text-2xl font-black tracking-tight">New Interview</DialogTitle>
+                    <DialogDescription className="text-base font-medium leading-relaxed">
+                      Enter candidate details to initialize their interview session.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="py-4 space-y-4">
-                    <div>
-                      <Label htmlFor="name">Candidate name *</Label>
+                  <div className="py-8 space-y-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="name" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Full Name</Label>
                       <Input
                         id="name"
                         placeholder="e.g., John Smith"
                         value={candidateName}
                         onChange={(e) => setCandidateName(e.target.value)}
-                        className="mt-2"
+                        className="h-14 text-base font-semibold rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
                         data-testid="input-candidate-name"
+                        autoFocus
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="email">Candidate email (optional)</Label>
+                    <div className="space-y-3">
+                      <Label htmlFor="email" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Email Address (Optional)</Label>
                       <Input
                         id="email"
                         type="email"
                         placeholder="e.g., john@example.com"
                         value={candidateEmail}
                         onChange={(e) => setCandidateEmail(e.target.value)}
-                        className="mt-2"
+                        className="h-14 text-base font-semibold rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
                         data-testid="input-candidate-email"
                       />
                     </div>
                   </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>
+                  <DialogFooter className="gap-3 sm:gap-0">
+                    <Button type="button" variant="ghost" className="rounded-xl font-bold h-12 px-6" onClick={() => setIsCreateOpen(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit" disabled={createInterview.isPending || !candidateName.trim()} data-testid="button-submit-interview">
-                      {createInterview.isPending ? "Creating..." : "Create"}
+                    <Button type="submit" size="lg" className="rounded-xl font-black h-12 px-8 shadow-lg shadow-primary/20" disabled={createInterview.isPending || !candidateName.trim()} data-testid="button-submit-interview">
+                      {createInterview.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Creating...
+                        </>
+                      ) : "Create Interview"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -179,104 +195,124 @@ export default function InterviewsListPage() {
             </Dialog>
           </div>
 
-          <div className="flex gap-2 mb-8 bg-muted/30 p-1 rounded-xl w-fit mx-auto border border-border/50">
-            <Link href={`/projects/${projectId}`}>
-              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
-                <Settings className="w-4 h-4 mr-2" />
-                1. Setup
-              </Button>
-            </Link>
-            <Link href={`/projects/${projectId}/questions`}>
-              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
-                <Brain className="w-4 h-4 mr-2" />
-                2. Questions
-              </Button>
-            </Link>
-            <Link href={`/projects/${projectId}/interviews`}>
-              <Button variant="secondary" size="sm" className="rounded-lg px-6">
-                <User className="w-4 h-4 mr-2" />
-                3. Interviews
-              </Button>
-            </Link>
+          <div className="flex items-center justify-center mb-12">
+            <div className="flex items-center w-full max-w-2xl bg-card/40 backdrop-blur-sm p-2 rounded-2xl border border-border/40 shadow-sm">
+              <Link href={`/projects/${projectId}`} className="flex-1">
+                <Button variant="ghost" size="sm" className="w-full rounded-xl px-6 text-muted-foreground font-bold hover:bg-muted/40 transition-all">
+                  <Settings className="w-4 h-4 mr-2" />
+                  1. Setup
+                </Button>
+              </Link>
+              <div className="mx-1 text-muted-foreground/20">
+                <ChevronRight className="w-4 h-4" />
+              </div>
+              <Link href={`/projects/${projectId}/questions`} className="flex-1">
+                <Button variant="ghost" size="sm" className="w-full rounded-xl px-6 text-muted-foreground font-bold hover:bg-muted/40 transition-all">
+                  <Brain className="w-4 h-4 mr-2" />
+                  2. Questions
+                </Button>
+              </Link>
+              <div className="mx-1 text-muted-foreground/20">
+                <ChevronRight className="w-4 h-4" />
+              </div>
+              <Link href={`/projects/${projectId}/interviews`} className="flex-1">
+                <Button variant="secondary" size="sm" className="w-full rounded-xl px-6 font-bold shadow-sm">
+                  <User className="w-4 h-4 mr-2" />
+                  3. Interviews
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {!interviews || interviews.length === 0 ? (
-            <Card className="rounded-2xl border-card-border/80 card-elevated p-16">
+            <Card className="rounded-[3rem] border-dashed border-2 border-border/60 bg-card/30 backdrop-blur-sm p-24 shadow-inner shadow-black/5">
               <div className="text-center max-w-md mx-auto">
-                <div className="mx-auto w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 ring-2 ring-primary/10">
-                  <User className="w-10 h-10 text-primary" />
+                <div className="mx-auto w-28 h-24 rounded-[2.5rem] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-10 ring-8 ring-primary/5 shadow-inner">
+                  <User className="w-12 h-12 text-primary/60 stroke-[1.5]" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">No interviews yet</h3>
-                <p className="text-muted-foreground mb-8 leading-relaxed">
-                  Create your first interview for this role.
+                <h3 className="text-2xl font-black mb-4 text-foreground/80 tracking-tight">No Interviews Yet</h3>
+                <p className="text-muted-foreground mb-12 text-lg font-medium leading-relaxed">
+                  Start your hiring journey by adding your first candidate for the {project?.title} role.
                 </p>
-                <Button className="shadow-sm" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-interview">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Interview
+                <Button size="lg" className="rounded-2xl h-14 px-10 font-black text-base shadow-2xl shadow-primary/30 transition-all hover:scale-105 active:scale-95" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-interview">
+                  <Plus className="w-6 h-6 mr-2 stroke-[3]" />
+                  Add First Candidate
                 </Button>
               </div>
             </Card>
           ) : (
-            <div className="space-y-4">
-              {interviews.map((interview) => (
-                <Card key={interview.id} className="group card-elevated rounded-2xl border-card-border/80 overflow-hidden" data-testid={`card-interview-${interview.id}`}>
-                  <CardHeader className="flex flex-row items-center gap-4 py-4">
-                    <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <User className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <CardTitle className="text-base">{interview.candidateName}</CardTitle>
-                        <Badge variant={statusColors[interview.status] as any}>
-                          {statusLabels[interview.status]}
-                        </Badge>
+            <div className="grid gap-4">
+              {interviews.map((interview) => {
+                const style = statusStyles[interview.status];
+                return (
+                  <Card key={interview.id} className="group rounded-[2rem] border-border/40 bg-card hover:bg-background shadow-sm hover:shadow-xl hover:shadow-primary/5 transition-all duration-500 overflow-hidden" data-testid={`card-interview-${interview.id}`}>
+                    <CardHeader className="flex flex-row items-center gap-6 p-6">
+                      <div className="w-14 h-14 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-500">
+                        <User className="w-6 h-6 text-primary" />
                       </div>
-                      <CardDescription className="flex items-center gap-4 mt-1">
-                        {interview.candidateEmail && <span>{interview.candidateEmail}</span>}
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {format(new Date(interview.createdAt), "MMM d, yyyy")}
-                        </span>
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {interview.status === "completed" && interview.reportJson && (
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/interviews/${interview.id}/report`}>
-                            <FileText className="w-4 h-4 mr-2" />
-                            View Report
-                          </Link>
-                        </Button>
-                      )}
-                      {interview.status !== "completed" && (
-                        <Button size="sm" asChild data-testid={`button-start-interview-${interview.id}`}>
-                          <Link href={`/interviews/${interview.id}/cockpit`}>
-                            <Play className="w-4 h-4 mr-2" />
-                            {interview.status === "in_progress" ? "Resume" : "Start"}
-                          </Link>
-                        </Button>
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`button-interview-menu-${interview.id}`}>
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => deleteInterview.mutate(interview.id)}
-                            data-testid={`button-delete-interview-${interview.id}`}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-1">
+                          <CardTitle className="text-xl font-black tracking-tight text-foreground/90">{interview.candidateName}</CardTitle>
+                          <Badge 
+                            variant={style.variant} 
+                            className={`rounded-full px-3 py-0 h-6 text-[10px] font-black uppercase tracking-widest ${style.className}`}
                           >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardHeader>
-                </Card>
-              ))}
+                            {style.label}
+                          </Badge>
+                        </div>
+                        <CardDescription className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-2">
+                          {interview.candidateEmail && (
+                            <span className="flex items-center gap-2 font-semibold text-xs text-muted-foreground">
+                              <Mail className="w-3.5 h-3.5" />
+                              {interview.candidateEmail}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-2 font-semibold text-xs text-muted-foreground">
+                            <Calendar className="w-3.5 h-3.5" />
+                            Added {format(new Date(interview.createdAt), "MMM d, yyyy")}
+                          </span>
+                        </CardDescription>
+                      </div>
+                      
+                      <div className="flex items-center gap-3">
+                        {interview.status === "completed" && interview.reportJson && (
+                          <Button variant="outline" className="rounded-xl font-bold border-border/60 hover:bg-muted h-11 px-5 shadow-sm group/btn transition-all" asChild>
+                            <Link href={`/interviews/${interview.id}/report`}>
+                              <FileText className="w-4 h-4 mr-2 text-primary group-hover/btn:scale-110 transition-transform" />
+                              Report
+                            </Link>
+                          </Button>
+                        )}
+                        {interview.status !== "completed" && (
+                          <Button className={`rounded-xl font-black h-11 px-6 shadow-lg shadow-primary/20 gap-2 transition-all ${interview.status === "in_progress" ? "bg-primary" : ""}`} asChild data-testid={`button-start-interview-${interview.id}`}>
+                            <Link href={`/interviews/${interview.id}/cockpit`}>
+                              <Play className={`w-4 h-4 ${interview.status === "in_progress" ? "fill-white" : "fill-primary-foreground"}`} />
+                              {interview.status === "in_progress" ? "Resume" : "Start"}
+                            </Link>
+                          </Button>
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl opacity-40 group-hover:opacity-100 transition-all hover:bg-muted" data-testid={`button-interview-menu-${interview.id}`}>
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="rounded-xl border-border/40 shadow-xl">
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive font-bold text-xs p-3 rounded-lg"
+                              onClick={() => deleteInterview.mutate(interview.id)}
+                              data-testid={`button-delete-interview-${interview.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Candidate
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </main>

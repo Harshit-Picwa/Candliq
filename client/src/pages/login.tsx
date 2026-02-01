@@ -18,15 +18,18 @@ import {
   User, 
   Sparkles,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+  Globe
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 export default function LoginPage() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
 
-  // Redirect to dashboard if already authenticated (but only if on /login, not on /)
   useEffect(() => {
     if (!isLoading && isAuthenticated && location === "/login") {
       navigate("/dashboard");
@@ -57,11 +60,9 @@ export default function LoginPage() {
       return response.json();
     },
     onSuccess: async () => {
-      // Wait a bit for the session cookie to be set before invalidating query
       await new Promise(resolve => setTimeout(resolve, 100));
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Welcome back!", description: "You've been logged in successfully." });
-      // Small delay before navigation to ensure cookie is set
       setTimeout(() => {
         navigate("/dashboard");
       }, 200);
@@ -102,11 +103,9 @@ export default function LoginPage() {
       return response.json();
     },
     onSuccess: async () => {
-      // Wait a bit for the session cookie to be set before invalidating query
       await new Promise(resolve => setTimeout(resolve, 100));
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Account created!", description: "Welcome to Candiq.AI!" });
-      // Small delay before navigation to ensure cookie is set
       setTimeout(() => {
         navigate("/dashboard");
       }, 200);
@@ -162,196 +161,167 @@ export default function LoginPage() {
   const passwordStrength = signupPassword.length >= 8;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 flex flex-col">
-      {/* Animated background pattern */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl animate-pulse delay-1000" />
+    <div className="min-h-screen flex flex-col bg-background relative selection:bg-primary/10 selection:text-primary overflow-hidden">
+      {/* Dynamic Background Elements */}
+      <div className="absolute inset-0 -z-10 pointer-events-none">
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/[0.03] rounded-full blur-[120px] -mr-40 -mt-40 animate-pulse" />
+        <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-primary/[0.03] rounded-full blur-[120px] -ml-40 -mb-40 animate-pulse delay-700" />
       </div>
 
-      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
         <div className="flex h-16 items-center justify-between gap-4 px-6 max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg">
-              <Briefcase className="w-5 h-5 text-primary-foreground" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+              <Briefcase className="w-4.5 h-4.5 text-primary-foreground stroke-[2.5]" />
             </div>
-            <div>
-              <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                Candiq.AI
-              </span>
-              <p className="text-xs text-muted-foreground -mt-1">Interview Assistant</p>
-            </div>
+            <span className="text-xl font-black tracking-tighter bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+              Candiq.AI
+            </span>
           </div>
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-          </div>
+          <ThemeToggle />
         </div>
       </header>
 
-      <main className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md space-y-6">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 py-16 relative z-10">
+        <div className="w-full max-w-[440px] space-y-10">
           {/* Welcome Header */}
-          <div className="text-center space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-medium mb-2">
-              <Sparkles className="w-4 h-4" />
-              AI-Powered Interview Assistant
+          <div className="text-center space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-[0.2em] mb-2 shadow-sm">
+              <Sparkles className="w-3 h-3" />
+              Intelligence Driven Hiring
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              Welcome to Candiq.AI
+            <h1 className="text-4xl font-black tracking-tight text-foreground/90">
+              Secure Access
             </h1>
-            <p className="text-muted-foreground">
-              Sign in to your account or create a new one to get started
+            <p className="text-muted-foreground font-medium text-base">
+              Sign in to your dashboard to manage projects and live interviews.
             </p>
           </div>
 
           {/* Auth Card */}
-          <Card className="border-2 shadow-xl animate-in fade-in slide-in-from-bottom-6 duration-700">
-            <CardContent className="pt-6">
+          <Card className="rounded-[2.5rem] border-border/40 bg-card shadow-2xl shadow-primary/5 overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-1000">
+            <CardContent className="p-8">
               <Tabs defaultValue="login" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-6">
-                  <TabsTrigger value="login" className="gap-2">
-                    <Lock className="w-4 h-4" />
+                <TabsList className="grid w-full grid-cols-2 p-1 bg-muted/50 rounded-2xl h-12 mb-8">
+                  <TabsTrigger value="login" className="rounded-xl font-bold gap-2 data-[state=active]:shadow-md data-[state=active]:bg-background">
+                    <Lock className="w-3.5 h-3.5" />
                     Log In
                   </TabsTrigger>
-                  <TabsTrigger value="signup" className="gap-2">
-                    <User className="w-4 h-4" />
+                  <TabsTrigger value="signup" className="rounded-xl font-bold gap-2 data-[state=active]:shadow-md data-[state=active]:bg-background">
+                    <User className="w-3.5 h-3.5" />
                     Sign Up
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="login" className="space-y-4 mt-0">
-                  <form onSubmit={handleLogin} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="login-email" className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-muted-foreground" />
-                        Email
-                      </Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <TabsContent value="login" className="space-y-6 mt-0 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <form onSubmit={handleLogin} className="space-y-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="login-email" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Email Address</Label>
+                      <div className="relative group">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
                         <Input
                           id="login-email"
                           type="email"
-                          placeholder="you@example.com"
+                          placeholder="you@company.com"
                           value={loginEmail}
                           onChange={(e) => setLoginEmail(e.target.value)}
                           required
                           disabled={loginMutation.isPending}
-                          className="pl-10"
+                          className="h-14 pl-12 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium"
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="login-password" className="flex items-center gap-2">
-                        <Lock className="w-4 h-4 text-muted-foreground" />
-                        Password
-                      </Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <div className="space-y-3">
+                      <Label htmlFor="login-password" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Secure Password</Label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
                         <Input
                           id="login-password"
                           type="password"
-                          placeholder="Enter your password"
+                          placeholder="••••••••"
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
                           required
                           disabled={loginMutation.isPending}
-                          className="pl-10"
+                          className="h-14 pl-12 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium"
                         />
                       </div>
                     </div>
                     <Button
                       type="submit"
-                      className="w-full h-11 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
+                      size="lg"
+                      className="w-full h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
                       disabled={loginMutation.isPending}
                     >
                       {loginMutation.isPending ? (
                         <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Logging in...
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          Authenticating...
                         </>
                       ) : (
                         <>
-                          Log In
-                          <ArrowRight className="w-4 h-4 ml-2" />
+                          Enter Dashboard
+                          <ArrowRight className="w-5 h-5 ml-2 stroke-[3]" />
                         </>
                       )}
                     </Button>
                   </form>
                 </TabsContent>
 
-                <TabsContent value="signup" className="space-y-4 mt-0">
-                  <form onSubmit={handleSignup} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email" className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-muted-foreground" />
-                        Email
-                      </Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input
-                          id="signup-email"
-                          type="email"
-                          placeholder="you@example.com"
-                          value={signupEmail}
-                          onChange={(e) => setSignupEmail(e.target.value)}
-                          required
-                          disabled={signupMutation.isPending}
-                          className="pl-10"
-                        />
-                      </div>
+                <TabsContent value="signup" className="space-y-6 mt-0 animate-in fade-in slide-in-from-left-4 duration-500">
+                  <form onSubmit={handleSignup} className="space-y-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="signup-email" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Email Address</Label>
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="you@company.com"
+                        value={signupEmail}
+                        onChange={(e) => setSignupEmail(e.target.value)}
+                        required
+                        disabled={signupMutation.isPending}
+                        className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
+                      />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password" className="flex items-center gap-2">
-                        <Lock className="w-4 h-4 text-muted-foreground" />
-                        Password
-                      </Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input
-                          id="signup-password"
-                          type="password"
-                          placeholder="At least 8 characters"
-                          value={signupPassword}
-                          onChange={(e) => setSignupPassword(e.target.value)}
-                          required
-                          minLength={8}
-                          disabled={signupMutation.isPending}
-                          className="pl-10"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
+                    <div className="space-y-3">
+                      <Label htmlFor="signup-password" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Password</Label>
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="Min. 8 characters"
+                        value={signupPassword}
+                        onChange={(e) => setSignupPassword(e.target.value)}
+                        required
+                        minLength={8}
+                        disabled={signupMutation.isPending}
+                        className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
+                      />
+                      <div className="flex items-center gap-2 px-1">
                         {passwordStrength ? (
-                          <>
-                            <CheckCircle2 className="w-3 h-3 text-green-500" />
-                            <span className="text-green-600 dark:text-green-400">Password meets requirements</span>
-                          </>
+                          <div className="flex items-center gap-1.5 text-green-600">
+                            <CheckCircle2 className="w-3 h-3 stroke-[3]" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Strength Verified</span>
+                          </div>
                         ) : (
-                          <span className="text-muted-foreground">
-                            Password must be at least 8 characters long
-                          </span>
+                          <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">At least 8 characters required</span>
                         )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-firstname" className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
-                          First Name
-                        </Label>
+                      <div className="space-y-3">
+                        <Label htmlFor="signup-firstname" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">First Name</Label>
                         <Input
                           id="signup-firstname"
                           type="text"
-                          placeholder="John"
+                          placeholder="Jane"
                           value={signupFirstName}
                           onChange={(e) => setSignupFirstName(e.target.value)}
                           disabled={signupMutation.isPending}
+                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-lastname" className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
-                          Last Name
-                        </Label>
+                      <div className="space-y-3">
+                        <Label htmlFor="signup-lastname" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Last Name</Label>
                         <Input
                           id="signup-lastname"
                           type="text"
@@ -359,23 +329,25 @@ export default function LoginPage() {
                           value={signupLastName}
                           onChange={(e) => setSignupLastName(e.target.value)}
                           disabled={signupMutation.isPending}
+                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
                         />
                       </div>
                     </div>
                     <Button
                       type="submit"
-                      className="w-full h-11 text-base font-semibold shadow-lg hover:shadow-xl transition-all"
+                      size="lg"
+                      className="w-full h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
                       disabled={signupMutation.isPending || !passwordStrength}
                     >
                       {signupMutation.isPending ? (
                         <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Creating account...
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          Creating Account...
                         </>
                       ) : (
                         <>
-                          Create Account
-                          <ArrowRight className="w-4 h-4 ml-2" />
+                          Create My Account
+                          <ArrowRight className="w-5 h-5 ml-2 stroke-[3]" />
                         </>
                       )}
                     </Button>
@@ -386,28 +358,28 @@ export default function LoginPage() {
           </Card>
 
           {/* Features Preview */}
-          <div className="grid grid-cols-3 gap-4 text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
-            <div className="p-4 rounded-lg bg-card/50 border border-border/50 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-2">
-                <Sparkles className="w-4 h-4 text-primary" />
+          <div className="grid grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-300">
+            {[
+              { icon: Sparkles, label: "AI Powered" },
+              { icon: Zap, label: "Real-time" },
+              { icon: ShieldCheck, label: "Encrypted" }
+            ].map((feat, i) => (
+              <div key={i} className="group p-4 rounded-3xl bg-muted/20 border border-border/40 backdrop-blur-sm transition-all hover:bg-muted/40 text-center">
+                <div className="w-10 h-10 rounded-2xl bg-background border border-border/60 flex items-center justify-center mx-auto mb-3 shadow-sm group-hover:scale-110 transition-transform">
+                  <feat.icon className="w-5 h-5 text-primary stroke-[2]" />
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">{feat.label}</p>
               </div>
-              <p className="text-xs font-medium">AI-Powered</p>
-            </div>
-            <div className="p-4 rounded-lg bg-card/50 border border-border/50 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-2">
-                <CheckCircle2 className="w-4 h-4 text-primary" />
-              </div>
-              <p className="text-xs font-medium">Free to Start</p>
-            </div>
-            <div className="p-4 rounded-lg bg-card/50 border border-border/50 backdrop-blur-sm">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-2">
-                <Lock className="w-4 h-4 text-primary" />
-              </div>
-              <p className="text-xs font-medium">Secure</p>
-            </div>
+            ))}
           </div>
         </div>
       </main>
+      
+      <footer className="py-8 px-6 text-center relative z-10">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">
+          &copy; {new Date().getFullYear()} Candiq.AI • Enterprise Grade Hiring
+        </p>
+      </footer>
     </div>
   );
 }

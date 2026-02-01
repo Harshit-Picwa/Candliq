@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2 } from "lucide-react";
+import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2, Loader2, ChevronRight, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
+import { Badge } from "@/components/ui/badge";
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
@@ -103,45 +104,56 @@ export default function DashboardPage() {
       <div className="min-h-screen page-gradient">
         <Header />
         <main className="max-w-7xl mx-auto px-8 py-12">
-          <div className="flex items-center justify-between mb-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
-              <p className="text-muted-foreground mt-1.5 text-base">
-                Manage your interview projects and candidates
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="outline" className="text-[10px] uppercase tracking-widest font-black py-0 h-5 px-2 rounded-md bg-primary/5 border-primary/20 text-primary">
+                  Workspace
+                </Badge>
+              </div>
+              <h1 className="text-4xl font-black tracking-tight text-foreground/90">Your Projects</h1>
+              <p className="text-muted-foreground mt-2 text-lg font-medium leading-relaxed max-w-2xl">
+                Streamline your hiring process with AI-powered interview intelligence.
               </p>
             </div>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
-                <Button className="shadow-md hover:shadow-lg transition-shadow" data-testid="button-create-project">
-                  <Plus className="w-4 h-4 mr-2" />
+                <Button size="lg" className="rounded-2xl px-8 font-bold shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]" data-testid="button-create-project">
+                  <Plus className="w-5 h-5 mr-2 stroke-[3]" />
                   New Project
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="rounded-3xl border-border/40 shadow-2xl">
                 <form onSubmit={handleCreate}>
-                  <DialogHeader>
-                    <DialogTitle>Create new project</DialogTitle>
-                    <DialogDescription>
-                      Start by giving your project a name. You can add job details later.
+                  <DialogHeader className="space-y-3">
+                    <DialogTitle className="text-2xl font-black tracking-tight">Create Project</DialogTitle>
+                    <DialogDescription className="text-base font-medium leading-relaxed">
+                      What role are you hiring for? You can customize the details in the next step.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="py-4">
-                    <Label htmlFor="title">Project title</Label>
+                  <div className="py-8">
+                    <Label htmlFor="title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 mb-3 block">Role Title</Label>
                     <Input
                       id="title"
-                      placeholder="e.g., Senior Software Engineer"
+                      placeholder="e.g., Senior Full Stack Engineer"
                       value={newProjectTitle}
                       onChange={(e) => setNewProjectTitle(e.target.value)}
-                      className="mt-2"
+                      className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
                       data-testid="input-project-title"
+                      autoFocus
                     />
                   </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>
+                  <DialogFooter className="gap-3 sm:gap-0">
+                    <Button type="button" variant="ghost" className="rounded-xl font-bold h-12 px-6" onClick={() => setIsCreateOpen(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit" disabled={createProject.isPending} data-testid="button-submit-project">
-                      {createProject.isPending ? "Creating..." : "Create"}
+                    <Button type="submit" size="lg" className="rounded-xl font-black h-12 px-8 shadow-lg shadow-primary/20" disabled={createProject.isPending} data-testid="button-submit-project">
+                      {createProject.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Creating...
+                        </>
+                      ) : "Create Project"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -150,61 +162,86 @@ export default function DashboardPage() {
           </div>
 
           {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3].map((i) => (
-                <Card key={i}>
-                  <CardHeader>
-                    <Skeleton className="h-5 w-3/4" />
-                    <Skeleton className="h-4 w-1/2 mt-2" />
-                  </CardHeader>
-                  <CardContent>
-                    <Skeleton className="h-4 w-full" />
-                  </CardContent>
-                </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-4">
+                  <Skeleton className="h-48 w-full rounded-[2rem]" />
+                </div>
               ))}
             </div>
           ) : projects && projects.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {projects.map((project) => (
-                <Card key={project.id} className="group card-elevated rounded-2xl border-card-border/80 overflow-hidden" data-testid={`card-project-${project.id}`}>
-                  <CardHeader className="flex flex-row items-start justify-between gap-4 pb-4">
+                <Card 
+                  key={project.id} 
+                  className="group relative rounded-[2rem] border-border/40 bg-card hover:bg-background shadow-sm hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 overflow-hidden cursor-pointer" 
+                  data-testid={`card-project-${project.id}`}
+                >
+                  <Link href={`/projects/${project.id}`} className="absolute inset-0 z-10" />
+                  <CardHeader className="relative z-0 flex flex-row items-start justify-between gap-4 p-8 pb-4">
                     <div className="flex-1 min-w-0">
-                      <Link href={`/projects/${project.id}`}>
-                        <CardTitle className="text-lg font-semibold hover:text-primary cursor-pointer truncate transition-colors">
-                          {project.title}
-                        </CardTitle>
-                      </Link>
-                      <CardDescription className="mt-1.5">
-                        Created {format(new Date(project.createdAt), "MMM d, yyyy")}
+                      <CardTitle className="text-xl font-black tracking-tight text-foreground/90 leading-tight group-hover:text-primary transition-colors">
+                        {project.title}
+                      </CardTitle>
+                      <CardDescription className="mt-2 flex items-center gap-2 font-bold text-[10px] uppercase tracking-[0.15em] text-muted-foreground/60">
+                        <Briefcase className="w-3 h-3" />
+                        Created {format(new Date(project.createdAt), "MMM d")}
                       </CardDescription>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`button-project-menu-${project.id}`}>
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => deleteProject.mutate(project.id)}
-                          data-testid={`button-delete-project-${project.id}`}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className="relative z-30">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-muted" data-testid={`button-project-menu-${project.id}`}>
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="rounded-xl border-border/40 shadow-xl">
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive font-bold text-xs p-3 rounded-lg"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              deleteProject.mutate(project.id);
+                            }}
+                            data-testid={`button-delete-project-${project.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="flex items-center gap-5 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>{project.jdText ? "JD added" : "No JD"}</span>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5">
-                        <Users className="w-3.5 h-3.5" />
-                        <span>{(project.screeningQuestionsJson?.length || 0)} questions</span>
+                  <CardContent className="relative z-0 p-8 pt-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Link href={`/projects/${project.id}?step=2`} className="relative z-30">
+                        <div className="flex items-center gap-2 rounded-xl bg-muted/40 border border-border/20 px-3 py-1.5 transition-all hover:bg-primary/10 hover:border-primary/20 hover:scale-105 active:scale-95 group/badge cursor-pointer">
+                          <FileText className={`w-3.5 h-3.5 ${project.jdText ? "text-primary" : "text-muted-foreground/40"}`} />
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${project.jdText ? "text-foreground/80" : "text-muted-foreground/60"}`}>
+                            {project.jdText ? "JD Active" : "No JD"}
+                          </span>
+                        </div>
+                      </Link>
+                      <Link href={`/projects/${project.id}/questions`} className="relative z-30">
+                        <div className="flex items-center gap-2 rounded-xl bg-muted/40 border border-border/20 px-3 py-1.5 transition-all hover:bg-primary/10 hover:border-primary/20 hover:scale-105 active:scale-95 group/badge cursor-pointer">
+                          <Users className={`w-3.5 h-3.5 ${(project.screeningQuestionsJson?.length || 0) > 0 ? "text-primary" : "text-muted-foreground/40"}`} />
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${(project.screeningQuestionsJson?.length || 0) > 0 ? "text-foreground/80" : "text-muted-foreground/60"}`}>
+                            {(project.screeningQuestionsJson?.length || 0)} Questions
+                          </span>
+                        </div>
+                      </Link>
+                    </div>
+                    
+                    <div className="mt-8 flex items-center justify-between relative z-30">
+                      <Link href={`/projects/${project.id}/interviews`} className="flex -space-x-2 hover:scale-105 transition-transform">
+                        {[1, 2, 3].map((i) => (
+                          <div key={i} className="h-7 w-7 rounded-full border-2 border-card bg-muted flex items-center justify-center transition-transform group-hover:-translate-y-1">
+                            <User className="h-3.5 w-3.5 text-muted-foreground/60" />
+                          </div>
+                        ))}
+                      </Link>
+                      <div className="h-8 w-8 rounded-full bg-primary/5 border border-primary/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all -translate-x-4 group-hover:translate-x-0 pointer-events-none">
+                        <ChevronRight className="w-4 h-4 text-primary" />
                       </div>
                     </div>
                   </CardContent>
@@ -212,18 +249,18 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <Card className="rounded-2xl border-card-border/80 overflow-hidden card-elevated p-16">
+            <Card className="rounded-[3rem] border-dashed border-2 border-border/60 bg-card/30 backdrop-blur-sm p-24 shadow-inner shadow-black/5">
               <div className="text-center max-w-md mx-auto">
-                <div className="mx-auto w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 ring-2 ring-primary/10">
-                  <Briefcase className="w-10 h-10 text-primary" />
+                <div className="mx-auto w-28 h-24 rounded-[2.5rem] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-10 ring-8 ring-primary/5 shadow-inner">
+                  <Briefcase className="w-12 h-12 text-primary/60 stroke-[1.5]" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">No projects yet</h3>
-                <p className="text-muted-foreground mb-8 leading-relaxed">
-                  Create your first project to start building screening questions and interviewing candidates.
+                <h3 className="text-3xl font-black mb-4 text-foreground/80 tracking-tight">Your hiring hub is empty</h3>
+                <p className="text-muted-foreground mb-12 text-lg font-medium leading-relaxed">
+                  Start by creating a project for the role you're hiring for. We'll handle the rest with AI.
                 </p>
-                <Button className="shadow-md hover:shadow-lg transition-shadow" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-project">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Project
+                <Button size="lg" className="rounded-2xl h-14 px-10 font-black text-base shadow-2xl shadow-primary/30 transition-all hover:scale-105 active:scale-95" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-project">
+                  <Plus className="w-6 h-6 mr-2 stroke-[3]" />
+                  Create First Project
                 </Button>
               </div>
             </Card>

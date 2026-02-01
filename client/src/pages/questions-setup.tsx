@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
-import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, User, Settings, Brain } from "lucide-react";
+import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, User, Settings, Brain, X, Rocket } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +30,49 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+function AutoResizeTextarea({ 
+  value, 
+  onChange, 
+  className, 
+  placeholder,
+  ...props 
+}: { 
+  value: string; 
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; 
+  className?: string;
+  placeholder?: string;
+  [key: string]: any;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = "0px";
+      const scrollHeight = textarea.scrollHeight;
+      textarea.style.height = scrollHeight + "px";
+    }
+  };
+
+  useEffect(() => {
+    adjustHeight();
+  }, [value]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => {
+        onChange(e);
+        adjustHeight();
+      }}
+      placeholder={placeholder}
+      className={`w-full overflow-hidden resize-none bg-transparent outline-none focus:ring-0 ${className}`}
+      {...props}
+    />
+  );
+}
 
 export default function QuestionsSetupPage() {
   const { id } = useParams<{ id: string }>();
@@ -47,9 +90,11 @@ export default function QuestionsSetupPage() {
   const [editedQuestionIds, setEditedQuestionIds] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
   const [invalidQuestionIds, setInvalidQuestionIds] = useState<Set<string>>(new Set());
-  const [step, setStep] = useState<"edit" | "review">("edit");
+  const [step, setStep] = useState<"edit" | "review" | "launch">("edit");
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [isRefiningIndividual, setIsRefiningIndividual] = useState(false);
+  const [selectedForRefine, setSelectedForRefine] = useState<Set<string>>(new Set());
+  const [isRefiningSelected, setIsRefiningSelected] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -98,10 +143,16 @@ export default function QuestionsSetupPage() {
   });
 
   const refineQuestions = useMutation({
-    mutationFn: async ({ instructions, questionId }: { instructions: string, questionId?: string }) => {
+    mutationFn: async ({ instructions, questionId, questionIds }: { instructions: string, questionId?: string, questionIds?: string[] }) => {
       if (questionId) {
         return apiRequest("POST", `/api/projects/${id}/refine-question`, {
           questionId,
+          customInstructions: instructions,
+        });
+      }
+      if (questionIds && questionIds.length > 0) {
+        return apiRequest("POST", `/api/projects/${id}/refine-selected-questions`, {
+          questionIds,
           customInstructions: instructions,
         });
       }
@@ -114,11 +165,18 @@ export default function QuestionsSetupPage() {
       setShowRefineDialog(false);
       setCustomInstructions("");
       setIsRefiningIndividual(false);
+      setIsRefiningSelected(false);
+      setSelectedForRefine(new Set());
+      
+      let title = "Questions refined";
+      if (variables.questionId) title = "Question refined";
+      else if (variables.questionIds) title = `${variables.questionIds.length} Questions refined`;
+
       toast({ 
-        title: variables.questionId ? "Question refined" : "Questions refined", 
+        title, 
         description: variables.questionId 
           ? "The question has been refined based on your instructions." 
-          : "New questions have been generated with your custom instructions." 
+          : "The questions have been updated with your custom instructions." 
       });
     },
     onError: (error: any) => {
@@ -235,7 +293,11 @@ export default function QuestionsSetupPage() {
       return;
     }
     setApproved(true);
-    toast({ title: "Questions approved", description: "Questions have been finalized." });
+    setStep("launch");
+    toast({ 
+      title: "Project Ready!", 
+      description: "Your screening criteria are finalized. You can now start interviewing candidates.",
+    });
   };
 
   const handleSave = () => {
@@ -276,127 +338,136 @@ export default function QuestionsSetupPage() {
       <div className="min-h-screen page-gradient">
         <Header />
         <main className="max-w-6xl mx-auto px-8 py-12">
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="icon" asChild>
+          <div className="flex items-center gap-4 mb-8">
+            <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background/80">
               <Link href={`/projects/${id}`}>
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
               </Link>
             </Button>
             <div className="flex-1">
-              <h1 className="text-xl font-bold tracking-tight">{project?.title}</h1>
-              <div className="flex items-center gap-3 mt-1">
-                <p className="text-muted-foreground text-sm">Questions</p>
-                <Badge variant="secondary" className="font-medium">
-                  {questionCount} question{questionCount !== 1 ? "s" : ""}
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold py-0 h-5 px-2 rounded-md bg-background/50 border-primary/20 text-primary/80">
+                  Project Questions
                 </Badge>
+              </div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{project?.title}</h1>
+              <div className="flex items-center gap-3 mt-1.5">
+                <div className="flex -space-x-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-6 w-6 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground overflow-hidden">
+                      <User className="h-3 w-3" />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-muted-foreground text-sm font-medium">
+                  {questionCount} question{questionCount !== 1 ? "s" : ""} generated
+                </p>
                 {approved && (
-                  <Badge variant="outline" className="gap-1 ring-1 ring-primary/20">
-                    <ShieldCheck className="w-3 h-3" />
-                    Approved
+                  <Badge className="gap-1 bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20 rounded-full py-0 h-6">
+                    <CheckCircle className="w-3 h-3" />
+                    Finalized
                   </Badge>
                 )}
               </div>
             </div>
-            {step === "edit" && (
-              <>
+            
+            <div className="flex items-center gap-2">
+              {step === "edit" ? (
+                <>
+                  <Button
+                    onClick={handleSave}
+                    disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
+                    variant="outline"
+                    className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm"
+                    data-testid="button-save-questions"
+                  >
+                    {saveQuestions.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
+                    )}
+                    Save Draft
+                  </Button>
+                  <Button
+                    onClick={handleContinueToReview}
+                    disabled={questionCount === 0 || invalidQuestionIds.size > 0}
+                    className="rounded-xl gap-2 shadow-lg shadow-primary/20 px-6 font-semibold"
+                    data-testid="button-review-approve"
+                  >
+                    Next Step
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </>
+              ) : step === "review" ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setStep("edit")}
+                    className="rounded-xl mr-2 text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Back to Edit
+                  </Button>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={approved || questionCount === 0 || invalidQuestionIds.size > 0}
+                    className="rounded-xl gap-2 px-8 font-bold shadow-lg shadow-primary/25 transition-all"
+                    data-testid="button-approve-questions"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Approve & Finish
+                  </Button>
+                </>
+              ) : (
                 <Button
-                  onClick={handleContinueToReview}
-                  disabled={questionCount === 0 || invalidQuestionIds.size > 0}
-                  className="gap-2 shadow-sm"
-                  data-testid="button-review-approve"
+                  variant="default"
+                  asChild
+                  className="rounded-xl gap-2 px-8 font-bold shadow-lg shadow-primary/25 bg-primary"
                 >
-                  Next: Review & Approve
-                  <ChevronRight className="w-4 h-4" />
+                  <Link href={`/projects/${id}/interviews`}>
+                    View Interviews
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
                 </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
-                  variant="outline"
-                  data-testid="button-save-questions"
-                >
-                  {saveQuestions.isPending ? "Saving..." : "Save"}
-                </Button>
-              </>
-            )}
-            {step === "review" && (
-              <>
-                <Button
-                  onClick={handleApprove}
-                  disabled={approved || questionCount === 0 || invalidQuestionIds.size > 0}
-                  variant={approved ? "default" : "default"}
-                  className="gap-2 shadow-md hover:shadow-lg transition-shadow"
-                  data-testid="button-approve-questions"
-                >
-                  {approved ? (
-                    <>
-                      <CheckCircle className="w-4 h-4" />
-                      Approved
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4" />
-                      Approve Questions
-                    </>
-                  )}
-                </Button>
-              </>
-            )}
+              )}
+            </div>
           </div>
 
-          <div className="flex gap-2 mb-8 bg-muted/30 p-1 rounded-xl w-fit mx-auto border border-border/50">
-            <Link href={`/projects/${id}`}>
-              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
-                <Settings className="w-4 h-4 mr-2" />
-                1. Setup
-              </Button>
-            </Link>
-            <Link href={`/projects/${id}/questions`}>
-              <Button variant="secondary" size="sm" className="rounded-lg px-6">
-                <Brain className="w-4 h-4 mr-2" />
-                2. Questions
-              </Button>
-            </Link>
-            <Link href={`/projects/${id}/interviews`}>
-              <Button variant="ghost" size="sm" className="rounded-lg px-6 text-muted-foreground">
-                <User className="w-4 h-4 mr-2" />
-                3. Interviews
-              </Button>
-            </Link>
-          </div>
-
-          <div className="flex items-center mb-10">
-            {[
-              { stepId: "edit" as const, label: "Refine Screening", icon: Edit },
-              { stepId: "review" as const, label: "Review & Approve", icon: ShieldCheck },
-            ].map(({ stepId, label, icon: Icon }, i) => (
-              <div key={stepId} className="flex items-center flex-1 last:flex-initial">
+          <div className="flex items-center justify-center mb-16">
+            <div className="relative flex items-center bg-muted/20 backdrop-blur-xl p-1.5 rounded-[2.5rem] border border-border/40 shadow-inner group">
+              {[
+                { stepId: "edit" as const, label: "Refine Criteria", icon: Edit },
+                { stepId: "review" as const, label: "Review & Approve", icon: ShieldCheck },
+                { stepId: "launch" as const, label: "Ready", icon: Rocket },
+              ].map(({ stepId, label, icon: Icon }, i) => (
                 <button
+                  key={stepId}
                   type="button"
+                  disabled={stepId === "launch" && !approved}
                   onClick={() => {
                     if (stepId === "review" && !validateAllQuestions()) return;
+                    if (stepId === "launch" && !approved) return;
                     setStep(stepId);
                   }}
-                  className={`flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm font-medium transition-all shrink-0 ${
+                  className={`relative flex items-center gap-3 px-8 py-4 rounded-[2rem] text-sm font-black transition-all duration-500 z-10 ${
                     step === stepId
-                      ? "bg-primary text-primary-foreground shadow-md ring-2 ring-primary/20"
-                      : "bg-card border border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      ? "text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-30 disabled:hover:bg-transparent"
                   }`}
                 >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${
-                    step === stepId ? "bg-primary-foreground/20" : "bg-muted"
+                  {step === stepId && (
+                    <div className="absolute inset-0 bg-primary shadow-2xl shadow-primary/30 rounded-[2rem] -z-10 animate-in fade-in zoom-in-95 duration-500" />
+                  )}
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black transition-all duration-500 ${
+                    step === stepId ? "bg-white/20 text-white rotate-[360deg]" : "bg-muted text-muted-foreground"
                   }`}>
                     {i + 1}
-                  </span>
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="hidden sm:inline">{label}</span>
+                  </div>
+                  <Icon className={`w-4 h-4 transition-all duration-500 ${step === stepId ? "scale-110" : "opacity-60"}`} />
+                  <span className="tracking-tight uppercase tracking-[0.05em]">{label}</span>
                 </button>
-                {i < 1 && (
-                  <div className={`flex-1 h-0.5 mx-4 rounded-full transition-colors ${
-                    step === "review" ? "bg-primary/40" : "bg-border"
-                  }`} />
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           {invalidQuestionIds.size > 0 && (
@@ -412,380 +483,583 @@ export default function QuestionsSetupPage() {
             </Card>
           )}
           {questions.length === 0 ? (
-            <Card className="rounded-2xl border-card-border/80 card-elevated p-16">
+            <Card className="rounded-3xl border-border/40 bg-card/50 backdrop-blur-sm p-20 shadow-xl shadow-primary/5">
               <div className="text-center max-w-md mx-auto">
-                <div className="mx-auto w-20 h-20 rounded-2xl bg-muted flex items-center justify-center mb-6 ring-2 ring-border/50">
-                  <AlertCircle className="w-10 h-10 text-muted-foreground" />
+                <div className="mx-auto w-24 h-24 rounded-[2rem] bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-8 ring-4 ring-primary/5 shadow-inner">
+                  <Brain className="w-12 h-12 text-primary/60" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">No questions yet</h3>
-                <p className="text-muted-foreground mb-8 leading-relaxed">
-                  Add a job description and generate questions to get started.
+                <h3 className="text-2xl font-black mb-3 text-foreground/80 tracking-tight">No Questions Yet</h3>
+                <p className="text-muted-foreground mb-10 leading-relaxed font-medium">
+                  We need a job description and some context to generate your tailored interview screening questions.
                 </p>
-                <Button asChild className="shadow-sm">
-                  <Link href={`/projects/${id}`}>Go to Setup</Link>
+                <Button asChild size="lg" className="rounded-2xl px-10 font-bold shadow-lg shadow-primary/20">
+                  <Link href={`/projects/${id}`}>Configure Setup First</Link>
                 </Button>
               </div>
             </Card>
+          ) : step === "launch" ? (
+            <div className="max-w-3xl mx-auto py-12 animate-in fade-in zoom-in duration-700">
+              <Card className="rounded-[3rem] border-border/40 bg-card/50 backdrop-blur-xl p-12 shadow-2xl shadow-primary/10 overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
+                  <Rocket className="w-64 h-64 text-primary" />
+                </div>
+                
+                <div className="relative z-10 text-center space-y-8">
+                  <div className="mx-auto w-24 h-24 rounded-[2.5rem] bg-green-500/10 flex items-center justify-center mb-6 ring-8 ring-green-500/5 shadow-inner animate-bounce duration-[3000ms]">
+                    <CheckCircle className="w-12 h-12 text-green-500" />
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <h2 className="text-4xl font-black tracking-tight text-foreground/90">Project is Live!</h2>
+                    <p className="text-xl text-muted-foreground font-medium max-w-lg mx-auto leading-relaxed">
+                      Your screening criteria and evaluation rubrics are finalized. You're ready to start interviewing candidates.
+                    </p>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-4 pt-8">
+                    <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer" asChild>
+                      <Link href={`/projects/${id}/interviews`}>
+                        <div className="space-y-4">
+                          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <User className="w-6 h-6 text-primary" />
+                          </div>
+                          <div className="text-left">
+                            <h4 className="font-black text-lg">Add Candidates</h4>
+                            <p className="text-sm text-muted-foreground font-medium">Invite applicants to start their screening session.</p>
+                          </div>
+                        </div>
+                      </Link>
+                    </Card>
+
+                    <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer" asChild>
+                      <Link href="/dashboard">
+                        <div className="space-y-4">
+                          <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <Settings className="w-6 h-6 text-muted-foreground" />
+                          </div>
+                          <div className="text-left">
+                            <h4 className="font-black text-lg">Project Dashboard</h4>
+                            <p className="text-sm text-muted-foreground font-medium">View your workspace and manage other projects.</p>
+                          </div>
+                        </div>
+                      </Link>
+                    </Card>
+                  </div>
+
+                  <div className="pt-8 border-t border-border/40">
+                    <div className="flex items-center justify-center gap-2 text-sm font-bold text-muted-foreground/60 uppercase tracking-widest">
+                      <Sparkles className="w-4 h-4" />
+                      Powered by Candiq AI
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </div>
           ) : step === "review" ? (
-            <div className="space-y-6">
-              {groupedQuestions.map(({ competency, questions: compQuestions }) => {
+            <div className="grid gap-10 pb-20 max-w-4xl mx-auto">
+              {groupedQuestions.map(({ competency, questions: compQuestions }, idx) => {
                 const selectedCompQuestions = compQuestions.filter(q => q.isMandatory);
                 if (selectedCompQuestions.length === 0) return null;
 
                 return (
-                  <Card key={competency.id} className="rounded-2xl border-card-border/80 overflow-hidden">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Badge variant="secondary">{selectedCompQuestions.length}</Badge>
-                        {competency.name}
-                      </CardTitle>
-                      <CardDescription>{competency.description}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
+                  <div key={competency.id} className="space-y-6">
+                    <div className="flex items-center gap-3 px-2">
+                      <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xs">
+                        {idx + 1}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-black tracking-tight text-foreground/90 leading-none mb-1">{competency.name}</h3>
+                        <p className="text-xs text-muted-foreground font-medium">{competency.description}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid gap-4">
                       {selectedCompQuestions.map((q) => (
-                        <div key={q.id} className="rounded-xl border border-border/80 bg-muted/20 p-5 space-y-4">
-                          <p className="font-medium text-sm leading-snug">{q.question}</p>
-                          <div className="pl-0 space-y-3">
-                            <h4 className="text-sm font-semibold">Expected answers</h4>
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Typical reasoning</p>
-                              <p className="text-sm">{q.rubric.typicalReasoning || "—"}</p>
+                        <Card key={q.id} className="rounded-2xl border-border/40 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group">
+                          <CardContent className="p-0">
+                            <div className="p-6 bg-card border-b border-border/30">
+                              <p className="font-bold text-base text-foreground/90 leading-relaxed">{q.question}</p>
                             </div>
-                            <div className="grid sm:grid-cols-3 gap-3">
-                              <div>
-                                <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                  <CheckCircle className="w-3 h-3 text-green-500" /> Good
+                            <div className="p-6 bg-muted/20 space-y-6">
+                              <div className="space-y-3">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
+                                  <Brain className="w-3.5 h-3.5" /> Core Reasoning
+                                </h4>
+                                <p className="text-sm font-medium text-foreground/70 leading-relaxed pl-5">
+                                  {q.rubric.typicalReasoning || "No reasoning criteria provided."}
                                 </p>
-                                <ul className="text-sm space-y-0.5">
-                                  {q.rubric.goodSignals?.map((s, i) => (
-                                    <li key={i}>• {s}</li>
-                                  ))}
-                                  {(!q.rubric.goodSignals || q.rubric.goodSignals.length === 0) && (
-                                    <li className="text-muted-foreground">—</li>
-                                  )}
-                                </ul>
                               </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                  <MessageSquare className="w-3 h-3 text-blue-500" /> Moderate
-                                </p>
-                                <ul className="text-sm space-y-0.5">
-                                  {q.rubric.moderateSignals?.map((s, i) => (
-                                    <li key={i}>• {s}</li>
-                                  ))}
-                                  {(!q.rubric.moderateSignals || q.rubric.moderateSignals.length === 0) && (
-                                    <li className="text-muted-foreground">—</li>
-                                  )}
-                                </ul>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                  <AlertCircle className="w-3 h-3 text-amber-500" /> Poor
-                                </p>
-                                <ul className="text-sm space-y-0.5">
-                                  {q.rubric.poorSignals?.map((s, i) => (
-                                    <li key={i}>• {s}</li>
-                                  ))}
-                                  {(!q.rubric.poorSignals || q.rubric.poorSignals.length === 0) && (
-                                    <li className="text-muted-foreground">—</li>
-                                  )}
-                                </ul>
+                              
+                              <div className="grid sm:grid-cols-3 gap-6">
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 text-green-600">
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Good Signal</span>
+                                  </div>
+                                  <ul className="space-y-2 pl-1">
+                                    {q.rubric.goodSignals?.map((s, i) => (
+                                      <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
+                                        <div className="h-1 w-1 rounded-full bg-green-500 mt-1.5 shrink-0" />
+                                        {s}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 text-blue-600">
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Moderate</span>
+                                  </div>
+                                  <ul className="space-y-2 pl-1">
+                                    {q.rubric.moderateSignals?.map((s, i) => (
+                                      <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
+                                        <div className="h-1 w-1 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                                        {s}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 text-amber-600">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Poor / Flag</span>
+                                  </div>
+                                  <ul className="space-y-2 pl-1">
+                                    {q.rubric.poorSignals?.map((s, i) => (
+                                      <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
+                                        <div className="h-1 w-1 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                                        {s}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
                               </div>
                             </div>
-                            {q.rubric.notes && (
-                              <div>
-                                <p className="text-xs text-muted-foreground mb-1">Notes</p>
-                                <p className="text-sm">{q.rubric.notes}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                          </CardContent>
+                        </Card>
                       ))}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 );
               })}
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              <ScrollArea className="h-[calc(100vh-280px)] pr-4 -mr-4 scrollbar-sm">
-                <div className="space-y-6 pb-8">
-                  <div className="flex items-center justify-between gap-4 mb-2">
-                    <h2 className="text-lg font-semibold">Refine Screening Criteria</h2>
-                    <Dialog open={showRefineDialog} onOpenChange={(open) => {
-                      setShowRefineDialog(open);
-                      if (!open) setIsRefiningIndividual(false);
-                    }}>
-                      <DialogTrigger asChild>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              <div className="lg:col-span-6 lg:sticky lg:top-4">
+                <div className="flex flex-col h-[calc(100vh-140px)] space-y-6">
+                  <div className="flex items-center justify-between gap-4 bg-background/80 backdrop-blur-md py-2 px-1">
+                    <div className="flex items-center gap-4">
+                      <h2 className="text-xl font-extrabold tracking-tight">Screening Criteria</h2>
+                      {selectedForRefine.size > 0 && (
+                        <Badge variant="secondary" className="rounded-full px-3 py-0.5 bg-primary/10 text-primary border-primary/20 animate-in zoom-in duration-300">
+                          {selectedForRefine.size} Selected
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {selectedForRefine.size > 0 ? (
                         <Button
-                          variant="outline"
+                          variant="default"
                           size="sm"
-                          className="gap-2"
-                          disabled={!project?.jdText || refineQuestions.isPending}
-                          onClick={() => setIsRefiningIndividual(false)}
+                          className="gap-2 rounded-xl shadow-lg shadow-primary/20 bg-primary font-bold animate-in slide-in-from-right-4"
+                          onClick={() => {
+                            setIsRefiningSelected(true);
+                            setIsRefiningIndividual(false);
+                            setShowRefineDialog(true);
+                          }}
                         >
                           <Sparkles className="w-4 h-4" />
-                          Refine All
+                          Refine Selected
                         </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>{isRefiningIndividual ? "Refine question" : "Refine all questions"}</DialogTitle>
-                          <DialogDescription>
-                            {isRefiningIndividual 
-                              ? "Provide custom instructions to refine this specific question." 
-                              : "Provide custom instructions to refine how all questions are generated. This will replace current questions."}
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          {isRefiningIndividual && selectedQuestion && (
-                            <div className="p-3 bg-muted rounded-lg text-xs font-medium border border-border/50 italic mb-2">
-                              "{selectedQuestion.question}"
-                            </div>
-                          )}
-                          <Textarea
-                            value={customInstructions}
-                            onChange={(e) => setCustomInstructions(e.target.value)}
-                            placeholder={isRefiningIndividual ? "How should this question change?" : "E.g., 'Make questions more technical'..."}
-                            className="min-h-[120px]"
-                          />
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => {
-                            setShowRefineDialog(false);
+                      ) : (
+                        <Dialog open={showRefineDialog} onOpenChange={(open) => {
+                          setShowRefineDialog(open);
+                          if (!open) {
                             setIsRefiningIndividual(false);
-                          }}>Cancel</Button>
-                          <Button 
-                            onClick={() => refineQuestions.mutate({ 
-                              instructions: customInstructions, 
-                              questionId: isRefiningIndividual ? selectedQuestionId || undefined : undefined 
-                            })}
-                            disabled={refineQuestions.isPending}
-                          >
-                            {refineQuestions.isPending ? "Refining..." : isRefiningIndividual ? "Refine Question" : "Refine All"}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                  {groupedQuestions
-                    .filter(g => g.questions && g.questions.length > 0)
-                    .map(({ competency, questions: compQuestions }, activeIdx) => {
-                      // Calculate global offset for numbering across filtered groups
-                      const previousQuestionsCount = groupedQuestions
-                        .filter(g => g.questions && g.questions.length > 0)
-                        .slice(0, activeIdx)
-                        .reduce((acc, g) => acc + g.questions.length, 0);
-
-                      return (
-                        <div key={competency.id} className="space-y-3">
-                          <div className="flex items-center gap-2 px-1">
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                              {activeIdx + 1}
-                            </div>
-                            <span className="font-bold text-[10px] uppercase tracking-widest text-muted-foreground/60">{competency.name}</span>
-                          </div>
-                          <div className="space-y-3">
-                            {compQuestions.map((question, idx) => (
-                              <div
-                                key={question.id}
-                                data-testid={`question-item-${question.id}`}
-                                onClick={() => setSelectedQuestionId(question.id)}
-                                className={`rounded-xl border p-4 cursor-pointer transition-all ${
-                                  selectedQuestionId === question.id
-                                    ? "ring-2 ring-primary border-primary shadow-md bg-primary/5"
-                                    : "hover:bg-muted/30 bg-card shadow-sm border-border/40"
-                                } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : ""}`}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className="flex flex-col gap-0.5 shrink-0 mt-0.5">
-                                    <span className="text-[10px] font-bold text-muted-foreground/30 mb-1 w-6 text-center">
-                                      {previousQuestionsCount + idx + 1}
-                                    </span>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        moveQuestion(question.id, "up");
-                                      }}
-                                      disabled={activeIdx === 0 && idx === 0}
-                                    >
-                                      <ArrowUp className="w-3 h-3" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        moveQuestion(question.id, "down");
-                                      }}
-                                      disabled={activeIdx === (groupedQuestions.filter(g => g.questions.length > 0).length - 1) && idx === (compQuestions.length - 1)}
-                                    >
-                                      <ArrowDown className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                  <div className="flex-1 min-w-0 space-y-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <Textarea
-                                        value={question.question}
-                                        onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className={`min-h-[80px] w-full resize-none text-sm font-medium border-none p-0 focus-visible:ring-0 bg-transparent leading-relaxed ${
-                                          invalidQuestionIds.has(question.id) ? "text-destructive" : ""
-                                        }`}
-                                        placeholder="Enter question text..."
-                                      />
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedQuestionId(question.id);
-                                            setIsRefiningIndividual(true);
-                                            setShowRefineDialog(true);
-                                          }}
-                                        >
-                                          <Sparkles className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            deleteQuestion(question.id);
-                                          }}
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                      <div 
-                                        className="flex items-center gap-2 cursor-pointer group"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          toggleMandatory(question.id);
-                                        }}
-                                      >
-                                        <Checkbox
-                                          checked={question.isMandatory}
-                                          onCheckedChange={() => toggleMandatory(question.id)}
-                                          className="h-4 w-4"
-                                        />
-                                        <span className={`text-xs font-semibold ${question.isMandatory ? "text-primary" : "text-muted-foreground"}`}>
-                                          {question.isMandatory ? "Included in interview" : "Not included"}
-                                        </span>
-                                      </div>
-                                      {!editedQuestionIds.has(question.id) && (
-                                        <Badge variant="secondary" className="bg-primary/5 text-primary border-primary/10 gap-1 h-5 text-[10px]">
-                                          <Sparkles className="w-3 h-3" /> AI Generated
-                                        </Badge>
-                                      )}
-                                      {editedQuestionIds.has(question.id) && (
-                                        <Badge variant="outline" className="gap-1 h-5 text-[10px]">
-                                          <Edit className="w-3 h-3" /> Edited
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </div>
+                            setIsRefiningSelected(false);
+                          }
+                        }}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="gap-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/10 shadow-sm"
+                              disabled={!project?.jdText || refineQuestions.isPending}
+                              onClick={() => {
+                                setIsRefiningIndividual(false);
+                                setIsRefiningSelected(false);
+                              }}
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              <span className="font-bold">AI Refine All</span>
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="rounded-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                                <Brain className="w-5 h-5 text-primary" />
+                                {isRefiningIndividual ? "Refine Question" : isRefiningSelected ? `Refine ${selectedForRefine.size} Questions` : "Refine All Questions"}
+                              </DialogTitle>
+                              <DialogDescription className="text-sm">
+                                {isRefiningIndividual 
+                                  ? "Provide specific instructions to improve this question." 
+                                  : isRefiningSelected
+                                    ? "Update only the selected questions. Their rubrics will be rebuilt."
+                                    : "Update the generation logic for all questions. This will rebuild your screening list."}
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                              {isRefiningIndividual && selectedQuestion && (
+                                <div className="p-4 bg-muted/50 rounded-xl text-sm font-medium border border-border/60 italic leading-relaxed text-muted-foreground">
+                                  "{selectedQuestion.question}"
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </ScrollArea>
+                              )}
+                              <Textarea
+                                value={customInstructions}
+                                onChange={(e) => setCustomInstructions(e.target.value)}
+                                placeholder={isRefiningIndividual ? "Example: 'Make it more focused on security' or 'Ask for a specific example'..." : "Example: 'Make all questions more technical' or 'Focus more on React patterns'..."}
+                                className="min-h-[140px] rounded-xl border-border/60 focus-visible:ring-primary/20 focus-visible:border-primary transition-all resize-none"
+                              />
+                            </div>
+                            <DialogFooter className="gap-2 sm:gap-0">
+                              <Button variant="ghost" className="rounded-xl" onClick={() => {
+                                setShowRefineDialog(false);
+                                setIsRefiningIndividual(false);
+                                setIsRefiningSelected(false);
+                              }}>Cancel</Button>
+                              <Button 
+                                className="rounded-xl gap-2 font-bold px-6 shadow-lg shadow-primary/20"
+                                onClick={() => refineQuestions.mutate({ 
+                                  instructions: customInstructions, 
+                                  questionId: isRefiningIndividual ? selectedQuestionId || undefined : undefined,
+                                  questionIds: isRefiningSelected ? Array.from(selectedForRefine) : undefined
+                                })}
+                                disabled={refineQuestions.isPending}
+                              >
+                                {refineQuestions.isPending ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Processing...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-4 h-4" />
+                                    {isRefiningIndividual || isRefiningSelected ? "Refine Now" : "Regenerate All"}
+                                  </>
+                                )}
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      )}
+                    </div>
+                  </div>
 
-              <div className="lg:sticky lg:top-4">
-                <Card className="rounded-2xl border-card-border/80 shadow-md overflow-hidden bg-card">
-                  <CardHeader className="bg-muted/30 border-b border-border/40 py-4">
-                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Expected answers</CardTitle>
-                    <CardDescription className="text-xs">
+                  <ScrollArea className="flex-1 pr-4 -mr-4 scrollbar-visible">
+                    <div className="space-y-8 pb-12">
+                      {groupedQuestions
+                        .filter(g => g.questions && g.questions.length > 0)
+                        .map(({ competency, questions: compQuestions }, activeIdx) => {
+                          const previousQuestionsCount = groupedQuestions
+                            .filter(g => g.questions && g.questions.length > 0)
+                            .slice(0, activeIdx)
+                            .reduce((acc, g) => acc + g.questions.length, 0);
+
+                          return (
+                            <div key={competency.id} className="space-y-4">
+                              <div className="flex items-center gap-3 px-1 mb-2">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary text-[11px] font-black text-white shadow-sm">
+                                  {activeIdx + 1}
+                                </div>
+                                <span className="font-black text-[11px] uppercase tracking-[0.2em] text-foreground/70">{competency.name}</span>
+                                <div className="flex-1 h-[1px] bg-gradient-to-r from-border/80 to-transparent ml-2" />
+                              </div>
+                              <div className="grid gap-4">
+                                {compQuestions.map((question, idx) => (
+                                  <div
+                                    key={question.id}
+                                    data-testid={`question-item-${question.id}`}
+                                    onClick={() => setSelectedQuestionId(question.id)}
+                                    className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden ${
+                                      selectedQuestionId === question.id
+                                        ? "ring-1 ring-primary border-primary shadow-xl shadow-primary/5 bg-background"
+                                        : "hover:bg-card/80 bg-card border-border/40 shadow-sm"
+                                    } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : ""}`}
+                                  >
+                                    {selectedQuestionId === question.id && (
+                                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
+                                    )}
+                                    <div className="p-5">
+                                      <div className="flex items-start gap-4">
+                                        <div className="flex flex-col items-center gap-2 shrink-0">
+                                          <div 
+                                            className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 transition-all cursor-pointer ${
+                                              selectedForRefine.has(question.id)
+                                                ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                                                : "border-border/60 bg-muted hover:border-primary/40"
+                                            }`}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const newSet = new Set(selectedForRefine);
+                                              if (newSet.has(question.id)) newSet.delete(question.id);
+                                              else newSet.add(question.id);
+                                              setSelectedForRefine(newSet);
+                                            }}
+                                          >
+                                            {selectedForRefine.has(question.id) ? (
+                                              <Sparkles className="h-3 w-3 fill-current" />
+                                            ) : (
+                                              <span className="text-[10px] font-black text-muted-foreground">
+                                                {previousQuestionsCount + idx + 1}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                moveQuestion(question.id, "up");
+                                              }}
+                                              disabled={activeIdx === 0 && idx === 0}
+                                            >
+                                              <ArrowUp className="w-3.5 h-3.5" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                moveQuestion(question.id, "down");
+                                              }}
+                                              disabled={activeIdx === (groupedQuestions.filter(g => g.questions.length > 0).length - 1) && idx === (compQuestions.length - 1)}
+                                            >
+                                              <ArrowDown className="w-3.5 h-3.5" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-start justify-between gap-4 mb-3">
+                                            <AutoResizeTextarea
+                                              value={question.question}
+                                              onChange={(e) => updateQuestion(question.id, { question: e.target.value })}
+                                              onClick={(e) => e.stopPropagation()}
+                                              className={`w-full text-base font-semibold leading-relaxed tracking-tight ${
+                                                invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
+                                              }`}
+                                              placeholder="Enter question text..."
+                                            />
+                                            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <TooltipProvider>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 border border-transparent hover:border-primary/20"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedQuestionId(question.id);
+                                                        setIsRefiningIndividual(true);
+                                                        setShowRefineDialog(true);
+                                                      }}
+                                                    >
+                                                      <Sparkles className="w-4 h-4" />
+                                                    </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>AI Refine</TooltipContent>
+                                                </Tooltip>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        deleteQuestion(question.id);
+                                                      }}
+                                                    >
+                                                      <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>Delete</TooltipContent>
+                                                </Tooltip>
+                                              </TooltipProvider>
+                                            </div>
+                                          </div>
+                                          
+                                          <div className="flex items-center justify-between border-t border-border/40 pt-4">
+                                            <div 
+                                              className="flex items-center gap-2.5 cursor-pointer group/check"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleMandatory(question.id);
+                                              }}
+                                            >
+                                              <Checkbox
+                                                checked={question.isMandatory}
+                                                onCheckedChange={() => toggleMandatory(question.id)}
+                                                className="h-4.5 w-4.5 rounded-md data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                              />
+                                              <span className={`text-xs font-bold transition-colors ${
+                                                question.isMandatory ? "text-primary" : "text-muted-foreground group-hover/check:text-foreground"
+                                              }`}>
+                                                {question.isMandatory ? "Included in interview" : "Exclude from interview"}
+                                              </span>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-2">
+                                              {!editedQuestionIds.has(question.id) ? (
+                                                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                                                  <Sparkles className="w-3 h-3" /> AI Generated
+                                                </Badge>
+                                              ) : (
+                                                <Badge variant="outline" className="bg-amber-500/5 text-amber-600 border-amber-500/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                                                  <Edit className="w-3 h-3" /> User Edited
+                                                </Badge>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+
+              <div className="lg:col-span-6 lg:sticky lg:top-4">
+                <Card className="rounded-3xl border-border/50 shadow-2xl shadow-primary/5 overflow-hidden bg-background flex flex-col h-[calc(100vh-140px)]">
+                  <div className="bg-primary/[0.03] border-b border-border/50 p-6">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <ShieldCheck className="w-5 h-5 text-primary" />
+                      </div>
+                      <CardTitle className="text-sm font-black uppercase tracking-[0.15em] text-foreground/80">Evaluation Rubric</CardTitle>
+                    </div>
+                    <CardDescription className="text-xs font-medium text-muted-foreground/70 ml-11">
                       {selectedQuestion
-                        ? "Rubric for the selected question"
-                        : "Select a question to view expected answers"}
+                        ? "AI-generated signals for scoring answers"
+                        : "Select a question on the left to see criteria"}
                     </CardDescription>
-                  </CardHeader>
-                  <ScrollArea className="h-[calc(100vh-380px)] scrollbar-sm">
+                  </div>
+                  
+                  <ScrollArea className="flex-1 pr-4 -mr-4 scrollbar-visible">
                     {selectedQuestion ? (
-                      <CardContent className="space-y-6 pt-6 pb-8">
-                        <div className="space-y-2">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Typical reasoning</h4>
-                          <p className="text-sm leading-relaxed">
-                            {selectedQuestion.rubric.typicalReasoning || "—"}
-                          </p>
+                      <CardContent className="space-y-8 p-8">
+                        <div className="space-y-3">
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.1em] text-muted-foreground/60 flex items-center gap-2">
+                            <Brain className="w-3 h-3" /> Typical Reasoning
+                          </h4>
+                          <div className="p-4 rounded-2xl bg-muted/30 border border-border/40">
+                            <p className="text-sm leading-relaxed font-medium text-foreground/80">
+                              {selectedQuestion.rubric.typicalReasoning || "—"}
+                            </p>
+                          </div>
                         </div>
                         
-                        <div className="space-y-5">
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-green-600/80 flex items-center gap-2">
-                              <CheckCircle className="w-3.5 h-3.5" /> Good
+                        <div className="space-y-6">
+                          <div className="space-y-3">
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.1em] text-green-600/80 flex items-center gap-2">
+                              <CheckCircle className="w-3.5 h-3.5" /> Good Signals
                             </h4>
-                            <ul className="text-sm space-y-1.5 pl-1">
+                            <div className="grid gap-2">
                               {selectedQuestion.rubric.goodSignals?.map((s, i) => (
-                                <li key={i} className="flex items-start gap-2">
-                                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-green-500/50" />
-                                  {s}
-                                </li>
+                                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-green-500/[0.03] border border-green-500/10 group transition-all hover:bg-green-500/[0.06]">
+                                  <div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-500 text-[10px] font-black text-white shadow-sm shadow-green-500/20">
+                                    <CheckCircle className="h-2.5 w-2.5" />
+                                  </div>
+                                  <span className="text-sm font-medium text-foreground/80 leading-snug">{s}</span>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
 
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600/80 flex items-center gap-2">
-                              <MessageSquare className="w-3.5 h-3.5" /> Moderate
+                          <div className="space-y-3">
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.1em] text-blue-600/80 flex items-center gap-2">
+                              <MessageSquare className="w-3.5 h-3.5" /> Moderate Signals
                             </h4>
-                            <ul className="text-sm space-y-1.5 pl-1">
+                            <div className="grid gap-2">
                               {selectedQuestion.rubric.moderateSignals?.map((s, i) => (
-                                <li key={i} className="flex items-start gap-2">
-                                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-blue-500/50" />
-                                  {s}
-                                </li>
+                                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-blue-500/[0.03] border border-blue-500/10 group transition-all hover:bg-blue-500/[0.06]">
+                                  <div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[10px] font-black text-white shadow-sm shadow-blue-500/20">
+                                    <MessageSquare className="h-2.5 w-2.5" />
+                                  </div>
+                                  <span className="text-sm font-medium text-foreground/80 leading-snug">{s}</span>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
 
-                          <div className="space-y-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-600/80 flex items-center gap-2">
-                              <AlertCircle className="w-3.5 h-3.5" /> Poor
+                          <div className="space-y-3">
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.1em] text-amber-600/80 flex items-center gap-2">
+                              <AlertCircle className="w-3.5 h-3.5" /> Red Flags / Poor
                             </h4>
-                            <ul className="text-sm space-y-1.5 pl-1">
+                            <div className="grid gap-2">
                               {selectedQuestion.rubric.poorSignals?.map((s, i) => (
-                                <li key={i} className="flex items-start gap-2">
-                                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500/50" />
-                                  {s}
-                                </li>
+                                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/[0.03] border border-amber-500/10 group transition-all hover:bg-amber-500/[0.06]">
+                                  <div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-500 text-[10px] font-black text-white shadow-sm shadow-amber-500/20">
+                                    <X className="h-2.5 w-2.5" />
+                                  </div>
+                                  <span className="text-sm font-medium text-foreground/80 leading-snug">{s}</span>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
                         </div>
 
                         {selectedQuestion.rubric.notes && (
-                          <div className="pt-4 border-t border-border/40">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 mb-2">Refine Screening</h4>
-                            <p className="text-sm italic text-muted-foreground leading-relaxed">
-                              {selectedQuestion.rubric.notes}
+                          <div className="pt-6 border-t border-border/40">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Sparkles className="w-3.5 h-3.5 text-primary" />
+                              <h4 className="text-[10px] font-black uppercase tracking-[0.1em] text-muted-foreground/60">AI Insight & Notes</h4>
+                            </div>
+                            <p className="text-xs font-medium italic text-muted-foreground leading-relaxed px-1">
+                              "{selectedQuestion.rubric.notes}"
                             </p>
                           </div>
                         )}
                       </CardContent>
                     ) : (
-                      <CardContent className="p-12 text-center">
-                        <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
-                          <MessageSquare className="h-6 w-6 text-muted-foreground/40" />
+                      <div className="h-full flex flex-col items-center justify-center p-12 text-center space-y-4">
+                        <div className="h-20 w-20 rounded-3xl bg-muted/30 border border-dashed border-border flex items-center justify-center">
+                          <Brain className="h-10 w-10 text-muted-foreground/20" />
                         </div>
-                        <p className="text-sm text-muted-foreground">Select a question on the left to view the detailed rubric and evaluation criteria.</p>
-                      </CardContent>
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-foreground/70">No Question Selected</h4>
+                          <p className="text-sm text-muted-foreground max-w-[200px] mx-auto">Click any question on the left to see its scoring rubric.</p>
+                        </div>
+                      </div>
                     )}
                   </ScrollArea>
+                  
+                  {selectedQuestion && (
+                    <div className="p-4 bg-muted/30 border-t border-border/40">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full rounded-xl gap-2 font-bold text-xs h-9 bg-background border-border/60 shadow-sm"
+                        onClick={() => {
+                          setIsRefiningIndividual(true);
+                          setShowRefineDialog(true);
+                        }}
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Refine This Question
+                      </Button>
+                    </div>
+                  )}
                 </Card>
               </div>
             </div>
