@@ -19,10 +19,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
+import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, CheckCircle, Settings, User, Globe, Clock, Info } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, CheckCircle, Settings, User, Globe, Clock, Info, Edit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function ProjectSetupPage() {
@@ -38,12 +39,14 @@ export default function ProjectSetupPage() {
   const [jdText, setJdText] = useState("");
   const [smeNotes, setSmeNotes] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
-  const [interviewDuration, setInterviewDuration] = useState<number>(30);
-  const [introMinutes, setIntroMinutes] = useState<number>(2);
-  const [closureMinutes, setClosureMinutes] = useState<number>(2);
-  const [totalDuration, setTotalDuration] = useState<number>(34); // Sum of above
+  const [interviewDuration, setInterviewDuration] = useState<number | "">("");
+  const [totalMinutes, setTotalMinutes] = useState<number | "">("");
   const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+
+  const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
+  const hasEdits =
+    jdText !== (project?.jdText || "") || smeNotes !== (project?.smeNotesText || "");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -54,17 +57,18 @@ export default function ProjectSetupPage() {
 
   useEffect(() => {
     if (project) {
+      const p = project as Record<string, unknown>;
       setTitle(project.title);
       setJdText(project.jdText || "");
       setSmeNotes(project.smeNotesText || "");
-      setCompanyWebsite((project as any).companyWebsite || "");
-      const duration = (project as any).interviewDuration ?? 30;
-      const intro = (project as any).introMinutes ?? 2;
-      const closure = (project as any).closureMinutes ?? 2;
-      setInterviewDuration(duration);
-      setIntroMinutes(intro);
-      setClosureMinutes(closure);
-      setTotalDuration(duration + intro + closure);
+      setCompanyWebsite((p.companyWebsite as string) || "");
+      // Support both camelCase and snake_case from API; no default — leave empty for new projects
+      const screeningMins = p.interviewDuration ?? p.interview_duration;
+      const screeningNum = screeningMins != null && screeningMins !== "" ? Number(screeningMins) : NaN;
+      setInterviewDuration(!Number.isNaN(screeningNum) && screeningNum > 0 ? screeningNum : "");
+      const totalMins = p.totalMinutes ?? p.total_minutes;
+      const totalNum = totalMins != null && totalMins !== "" ? Number(totalMins) : NaN;
+      setTotalMinutes(!Number.isNaN(totalNum) && totalNum >= 0 ? totalNum : "");
     }
   }, [project]);
 
@@ -121,8 +125,7 @@ export default function ProjectSetupPage() {
       smeNotesText: smeNotes,
       companyWebsite: companyWebsite || undefined,
       interviewDuration: interviewDuration || undefined,
-      introMinutes: introMinutes || undefined,
-      closureMinutes: closureMinutes || undefined,
+      totalMinutes: totalMinutes || undefined,
     } as any);
   };
 
@@ -139,8 +142,7 @@ export default function ProjectSetupPage() {
         smeNotesText: smeNotes,
         companyWebsite: companyWebsite || undefined,
         interviewDuration: interviewDuration || undefined,
-        introMinutes: introMinutes || undefined,
-        closureMinutes: closureMinutes || undefined,
+        totalMinutes: totalMinutes || undefined,
       } as any);
       
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -197,12 +199,21 @@ export default function ProjectSetupPage() {
             </Button>
           </div>
 
+          {/* Three-stage progress: Stage 1 = JD & SME Notes → Create questions */}
+          <div className="mb-6 max-w-4xl mx-auto">
+            <StageProgressBar currentStage={1} />
+          </div>
+
+          <div className="flex items-center justify-center mb-4">
+            <p className="text-xs font-medium text-muted-foreground">Stage 1: Enter JD and SME notes, then generate questions</p>
+          </div>
+
           <div className="flex items-center justify-center mb-12">
             <div className="flex items-center w-full max-w-3xl bg-card/40 backdrop-blur-sm p-2 rounded-2xl border border-border/40 shadow-sm">
               {[
                 { step: 1 as const, label: "Campaign", icon: Settings },
                 { step: 2 as const, label: "Job Description", icon: FileText },
-                { step: 3 as const, label: "Refine", icon: Brain },
+                { step: 3 as const, label: "SME Notes", icon: Brain },
               ].map(({ step, label, icon: Icon }, i) => (
                 <div key={step} className="flex items-center flex-1 last:flex-initial">
                   <button
@@ -232,7 +243,37 @@ export default function ProjectSetupPage() {
             </div>
           </div>
 
-          {setupStep === 1 && (
+          {/* Skeleton loader while questions are being generated (after confirm) */}
+          {generateQuestions.isPending && (
+            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
+              <CardHeader className="p-10 pb-6">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                  </div>
+                  <div className="space-y-2">
+                    <CardTitle className="text-xl font-black tracking-tight">Generating questions</CardTitle>
+                    <CardDescription className="text-sm">
+                      AI is creating screening questions and grading rubrics. This may take a moment…
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-10 pt-0 space-y-4">
+                <Skeleton className="h-4 w-full rounded-lg" />
+                <Skeleton className="h-4 w-5/6 rounded-lg" />
+                <Skeleton className="h-4 w-4/5 rounded-lg" />
+                <div className="pt-6 space-y-3">
+                  <Skeleton className="h-12 w-full rounded-xl" />
+                  <Skeleton className="h-12 w-full rounded-xl" />
+                  <Skeleton className="h-12 w-full rounded-xl" />
+                  <Skeleton className="h-12 w-3/4 rounded-xl" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!generateQuestions.isPending && setupStep === 1 && (
             <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
               <CardHeader className="p-10 pb-6">
                 <div className="flex items-center gap-3 mb-2">
@@ -259,56 +300,81 @@ export default function ProjectSetupPage() {
                     />
                   </div>
                   
-                  <div className="grid md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-3">
-                      <Label htmlFor="total-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                      <Label htmlFor="total-minutes" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                         <Clock className="w-3 h-3" />
-                        Total Duration
+                        Total Interview Time (min)
                       </Label>
-                      <div className="relative">
-                        <select
-                          id="total-duration"
-                          value={totalDuration}
-                          onChange={(e) => {
-                            const total = parseInt(e.target.value);
-                            setTotalDuration(total);
-                            setIntroMinutes(2);
-                            setClosureMinutes(2);
-                            setInterviewDuration(total - 4);
-                          }}
-                          className="h-14 w-full rounded-2xl border border-border/60 bg-background/50 px-5 text-lg font-semibold outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary appearance-none transition-all cursor-pointer"
-                        >
-                          <option value={15}>15 Minutes</option>
-                          <option value={20}>20 Minutes</option>
-                          <option value={30}>30 Minutes</option>
-                          <option value={45}>45 Minutes</option>
-                          <option value={60}>60 Minutes</option>
-                        </select>
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
-                          <ChevronRight className="w-5 h-5 rotate-90" />
-                        </div>
-                      </div>
+                      <Input
+                        id="total-minutes"
+                        type="number"
+                        value={totalMinutes}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "") {
+                            setTotalMinutes("");
+                            return;
+                          }
+                          setTotalMinutes(parseInt(val) || 0);
+                        }}
+                        placeholder="Minutes"
+                        className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                      />
                     </div>
 
                     <div className="space-y-3">
-                      <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
-                        <Globe className="w-3 h-3" />
-                        Company Website
+                      <Label htmlFor="interview-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                        <Clock className="w-3 h-3" />
+                        Total Screening Time (min)
                       </Label>
                       <Input
-                        id="company-website"
-                        type="url"
-                        value={companyWebsite}
-                        onChange={(e) => setCompanyWebsite(e.target.value)}
-                        placeholder="https://company.com"
-                        className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                        id="interview-duration"
+                        type="number"
+                        value={interviewDuration}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "") {
+                            setInterviewDuration("");
+                            return;
+                          }
+                          setInterviewDuration(parseInt(val) || 0);
+                        }}
+                        placeholder="Minutes"
+                        className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
                       />
                     </div>
                   </div>
+
+                  <div className="space-y-3">
+                    <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                      <Globe className="w-3 h-3" />
+                      Company Website
+                    </Label>
+                    <Input
+                      id="company-website"
+                      type="url"
+                      value={companyWebsite}
+                      onChange={(e) => setCompanyWebsite(e.target.value)}
+                      placeholder="https://company.com"
+                      className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex justify-end pt-6">
-                  <Button onClick={() => setSetupStep(2)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12">
+                <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-6">
+                  {hasExistingQuestions && (
+                    <Button
+                      variant="outline"
+                      onClick={() => navigate(`/projects/${id}/questions`)}
+                      className="rounded-xl px-6 font-bold h-12 gap-2 border-primary/30 hover:bg-primary/5 w-full sm:w-auto"
+                      data-testid="button-skip-to-questions-step1"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      Continue to Questions
+                    </Button>
+                  )}
+                  <Button onClick={() => setSetupStep(2)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto">
                     Next: Job Description
                     <ChevronRight className="w-4 h-4" />
                   </Button>
@@ -317,7 +383,7 @@ export default function ProjectSetupPage() {
             </Card>
           )}
 
-          {setupStep === 2 && (
+          {!generateQuestions.isPending && setupStep === 2 && (
             <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
               <CardHeader className="p-10 pb-6">
                 <div className="flex items-center justify-between">
@@ -329,7 +395,7 @@ export default function ProjectSetupPage() {
                   </div>
                 </div>
                 <CardDescription className="text-base font-medium ml-13 mt-2">
-                  Paste the JD below. Our AI will analyze it to generate relevant questions.
+                  Paste the job description (text only). Our AI will generate screening questions and grading rubrics.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-10 pt-0 space-y-6">
@@ -353,31 +419,44 @@ export default function ProjectSetupPage() {
                   )}
                 </div>
                 
-                <div className="flex justify-between items-center pt-6">
-                  <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2" data-testid="button-back-step-2">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6">
+                  <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
                     <ChevronLeft className="w-4 h-4" />
                     Back
                   </Button>
-                  <Button onClick={() => setSetupStep(3)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12" disabled={!jdText.trim()}>
-                    Next: Refine Criteria
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
+                    {hasExistingQuestions && (
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate(`/projects/${id}/questions`)}
+                        className="rounded-xl px-6 font-bold h-12 gap-2 border-primary/30 hover:bg-primary/5"
+                        data-testid="button-skip-to-questions"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Continue to Questions
+                      </Button>
+                    )}
+                    <Button onClick={() => setSetupStep(3)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12" disabled={!jdText.trim()}>
+                      Next: SME Notes
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {setupStep === 3 && (
+          {!generateQuestions.isPending && setupStep === 3 && (
             <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
               <CardHeader className="p-10 pb-6">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                     <Brain className="w-5 h-5 text-primary" />
                   </div>
-                  <CardTitle className="text-2xl font-black tracking-tight">Refine Screening</CardTitle>
+                  <CardTitle className="text-2xl font-black tracking-tight">SME Notes</CardTitle>
                 </div>
                 <CardDescription className="text-base font-medium ml-13">
-                  Add custom instructions to guide the AI in generating the perfect screening questions.
+                  Add SME expectations (e.g. Head of Tech, Head of Marketing) so the AI generates questions and rubrics that match.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-10 pt-0 space-y-8">
@@ -410,46 +489,71 @@ export default function ProjectSetupPage() {
                     <ChevronLeft className="w-4 h-4" />
                     Back
                   </Button>
-                  
-                  <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
-                    <Button
-                      onClick={() => setShowGenerateConfirm(true)}
-                      disabled={generateQuestions.isPending || !jdText.trim()}
-                      className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                      data-testid="button-generate-questions"
-                    >
-                      {generateQuestions.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Generating Rubric...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          Generate Questions
-                          <ChevronRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </Button>
-                    <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
-                      <AlertDialogHeader>
-                        <AlertDialogTitle className="text-xl font-black">Generate Questions?</AlertDialogTitle>
-                        <AlertDialogDescription className="text-base font-medium">
-                          This will use AI to analyze your job description and generate specific screening questions. 
-                          Please ensure you have filled in the details properly before proceeding.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter className="gap-3">
-                        <AlertDialogCancel className="rounded-xl font-bold">Review Details</AlertDialogCancel>
-                        <AlertDialogAction 
-                          onClick={handleGenerate}
-                          className="rounded-xl font-bold bg-primary hover:bg-primary/90"
-                        >
-                          Confirm & Generate
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+
+                  {hasExistingQuestions && !hasEdits ? (
+                    <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                      <Button
+                        variant="outline"
+                        onClick={() => navigate(`/projects/${id}/questions`)}
+                        className="rounded-xl px-6 font-bold h-12 gap-2 border-primary/30 hover:bg-primary/5"
+                        data-testid="button-skip-to-questions-step3"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Continue to Questions
+                      </Button>
+                      <Button
+                        onClick={() => setSetupStep(2)}
+                        className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        data-testid="button-edit-jd-sme"
+                      >
+                        <Edit className="w-4 h-4" />
+                        Edit JD & SME Notes
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
+                      <Button
+                        onClick={() => setShowGenerateConfirm(true)}
+                        disabled={generateQuestions.isPending || !jdText.trim()}
+                        className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        data-testid="button-generate-questions"
+                      >
+                        {generateQuestions.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Generating Rubric...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            {hasExistingQuestions ? "Regenerate Questions" : "Generate Questions"}
+                            <ChevronRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </Button>
+                      <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-xl font-black">
+                            {hasExistingQuestions ? "Regenerate Questions?" : "Generate Questions?"}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription className="text-base font-medium">
+                            Candiq AI (Gemini 2.5 Pro) will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers). 
+                            {hasExistingQuestions && " This will replace your existing questions."}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="gap-3">
+                          <AlertDialogCancel className="rounded-xl font-bold">Review Details</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={handleGenerate}
+                            className="rounded-xl font-bold bg-primary hover:bg-primary/90"
+                          >
+                            Confirm & {hasExistingQuestions ? "Regenerate" : "Generate"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -24,10 +23,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Header } from "@/components/header";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
+import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, Interview } from "@shared/schema";
-import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock, Settings, Brain, ChevronRight, Mail, Calendar, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, User, MoreVertical, Trash2, Play, FileText, Clock, Mail, Calendar, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 const statusStyles: Record<string, { variant: any, className: string, label: string }> = {
@@ -50,6 +50,7 @@ const statusStyles: Record<string, { variant: any, className: string, label: str
 
 export default function InterviewsListPage() {
   const { id: projectId } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [candidateName, setCandidateName] = useState("");
@@ -137,12 +138,6 @@ export default function InterviewsListPage() {
               <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{project?.title}</h1>
             </div>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button className="rounded-xl font-bold shadow-lg shadow-primary/20 gap-2" data-testid="button-create-interview">
-                  <Plus className="w-4 h-4 stroke-[3]" />
-                  Add Candidate
-                </Button>
-              </DialogTrigger>
               <DialogContent className="rounded-3xl border-border/40 shadow-2xl">
                 <form onSubmit={handleCreate}>
                   <DialogHeader className="space-y-3">
@@ -195,33 +190,18 @@ export default function InterviewsListPage() {
             </Dialog>
           </div>
 
-          <div className="flex items-center justify-center mb-12">
-            <div className="flex items-center w-full max-w-2xl bg-card/40 backdrop-blur-sm p-2 rounded-2xl border border-border/40 shadow-sm">
-              <Link href={`/projects/${projectId}`} className="flex-1">
-                <Button variant="ghost" size="sm" className="w-full rounded-xl px-6 text-muted-foreground font-bold hover:bg-muted/40 transition-all">
-                  <Settings className="w-4 h-4 mr-2" />
-                  1. Setup
-                </Button>
-              </Link>
-              <div className="mx-1 text-muted-foreground/20">
-                <ChevronRight className="w-4 h-4" />
-              </div>
-              <Link href={`/projects/${projectId}/questions`} className="flex-1">
-                <Button variant="ghost" size="sm" className="w-full rounded-xl px-6 text-muted-foreground font-bold hover:bg-muted/40 transition-all">
-                  <Brain className="w-4 h-4 mr-2" />
-                  2. Questions
-                </Button>
-              </Link>
-              <div className="mx-1 text-muted-foreground/20">
-                <ChevronRight className="w-4 h-4" />
-              </div>
-              <Link href={`/projects/${projectId}/interviews`} className="flex-1">
-                <Button variant="secondary" size="sm" className="w-full rounded-xl px-6 font-bold shadow-sm">
-                  <User className="w-4 h-4 mr-2" />
-                  3. Interviews
-                </Button>
-              </Link>
-            </div>
+          <div className="mb-6 max-w-4xl mx-auto">
+            <StageProgressBar
+              currentStage={3}
+              onStageClick={(s) => {
+                if (s === 1) navigate(`/projects/${projectId}`);
+                if (s === 2) navigate(`/projects/${projectId}/questions`);
+              }}
+              clickableStages={[1, 2]}
+            />
+          </div>
+          <div className="flex items-center justify-center mb-6">
+            <p className="text-xs font-medium text-muted-foreground">Stage 3: Ready for interview — add candidates and start screening</p>
           </div>
 
           {!interviews || interviews.length === 0 ? (
@@ -291,13 +271,13 @@ export default function InterviewsListPage() {
                             </Link>
                           </Button>
                         )}
-                        <DropdownMenu>
+                        <DropdownMenu modal={false}>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl opacity-40 group-hover:opacity-100 transition-all hover:bg-muted" data-testid={`button-interview-menu-${interview.id}`}>
+                            <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-xl opacity-40 group-hover:opacity-100 transition-all hover:bg-muted shrink-0" data-testid={`button-interview-menu-${interview.id}`}>
                               <MoreVertical className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="rounded-xl border-border/40 shadow-xl">
+                          <DropdownMenuContent align="end" sideOffset={8} className="rounded-xl border-border/40 shadow-xl z-[100]">
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive font-bold text-xs p-3 rounded-lg"
                               onClick={() => deleteInterview.mutate(interview.id)}

@@ -52,6 +52,7 @@ export class DatabaseStorage implements IStorage {
     "interviewDuration",
     "introMinutes",
     "closureMinutes",
+    "totalMinutes",
     "screeningQuestionsJson",
     "competencyRubricJson",
   ] as const;
@@ -66,11 +67,14 @@ export class DatabaseStorage implements IStorage {
     if (Object.prototype.hasOwnProperty.call(raw, "interviewDuration")) payload.interviewDuration = raw.interviewDuration as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "introMinutes")) payload.introMinutes = raw.introMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "closureMinutes")) payload.closureMinutes = raw.closureMinutes as number | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "totalMinutes")) (payload as Record<string, unknown>).totalMinutes = raw.totalMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "screeningQuestionsJson")) payload.screeningQuestionsJson = raw.screeningQuestionsJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
+    // Omit totalMinutes from update if Prisma client doesn't support it yet (run `npx prisma generate` after migration)
+    const { totalMinutes: _tm, ...updateData } = payload as Record<string, unknown>;
     const updated = await db.project.update({
       where: { id },
-      data: payload,
+      data: updateData as Prisma.ProjectUpdateInput,
     });
     return updated as Project | undefined;
   }

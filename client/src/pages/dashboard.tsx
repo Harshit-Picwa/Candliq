@@ -177,7 +177,33 @@ export default function DashboardPage() {
                   className="group relative rounded-[2rem] border-border/40 bg-card hover:bg-background shadow-sm hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 overflow-hidden cursor-pointer" 
                   data-testid={`card-project-${project.id}`}
                 >
-                  <Link href={`/projects/${project.id}`} className="absolute inset-0 z-10" />
+                  <Link 
+                    href={(project.screeningQuestionsJson?.length || 0) > 0 ? `/projects/${project.id}/questions` : `/projects/${project.id}`} 
+                    className="absolute inset-0 z-10" 
+                  />
+                  <div className="absolute top-6 right-6 z-20" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-muted shrink-0" data-testid={`button-project-menu-${project.id}`}>
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" sideOffset={8} className="rounded-xl border-border/40 shadow-xl z-[100]">
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive font-bold text-xs p-3 rounded-lg"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            deleteProject.mutate(project.id);
+                          }}
+                          data-testid={`button-delete-project-${project.id}`}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Project
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                   <CardHeader className="relative z-0 flex flex-row items-start justify-between gap-4 p-8 pb-4">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-xl font-black tracking-tight text-foreground/90 leading-tight group-hover:text-primary transition-colors">
@@ -187,29 +213,6 @@ export default function DashboardPage() {
                         <Briefcase className="w-3 h-3" />
                         Created {format(new Date(project.createdAt), "MMM d")}
                       </CardDescription>
-                    </div>
-                    <div className="relative z-30">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-muted" data-testid={`button-project-menu-${project.id}`}>
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="rounded-xl border-border/40 shadow-xl">
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive font-bold text-xs p-3 rounded-lg"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              deleteProject.mutate(project.id);
-                            }}
-                            data-testid={`button-delete-project-${project.id}`}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete Project
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
                   </CardHeader>
                   <CardContent className="relative z-0 p-8 pt-4">

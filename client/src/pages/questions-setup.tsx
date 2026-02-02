@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,10 +11,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Header } from "@/components/header";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
+import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
-import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, User, Settings, Brain, X, Rocket } from "lucide-react";
+import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, User, Settings, Brain, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -76,6 +77,7 @@ function AutoResizeTextarea({
 
 export default function QuestionsSetupPage() {
   const { id } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
 
   const { data: project, isLoading } = useQuery<Project>({
@@ -293,11 +295,11 @@ export default function QuestionsSetupPage() {
       return;
     }
     setApproved(true);
-    setStep("launch");
     toast({ 
       title: "Project Ready!", 
-      description: "Your screening criteria are finalized. You can now start interviewing candidates.",
+      description: "Your screening criteria are finalized. You can now add candidates.",
     });
+    navigate(`/projects/${id}/interviews`);
   };
 
   const handleSave = () => {
@@ -433,38 +435,52 @@ export default function QuestionsSetupPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-center mb-16">
-            <div className="relative flex items-center bg-muted/20 backdrop-blur-xl p-1.5 rounded-[2.5rem] border border-border/40 shadow-inner group">
+          {/* Three-stage progress: Stage 2 = Refine & Review; Stage 3 = Ready (Interviews page) */}
+          <div className="mb-6 max-w-4xl mx-auto">
+            <StageProgressBar
+              currentStage={2}
+              onStageClick={(s) => {
+                if (s === 1) navigate(`/projects/${id}`);
+                if (s === 2) setStep("review");
+                if (s === 3) navigate(`/projects/${id}/interviews`);
+              }}
+              clickableStages={[1, 2, 3]}
+            />
+          </div>
+          <div className="flex items-center justify-center mb-3">
+            <p className="text-xs font-medium text-muted-foreground">Stage 2: Refine questions, review rubrics, then approve to go live</p>
+          </div>
+
+          <div className="flex items-center justify-center mb-8">
+            <div className="relative flex items-center bg-muted/20 backdrop-blur-sm p-1 rounded-2xl border border-border/40 shadow-inner">
               {[
                 { stepId: "edit" as const, label: "Refine Criteria", icon: Edit },
                 { stepId: "review" as const, label: "Review & Approve", icon: ShieldCheck },
-                { stepId: "launch" as const, label: "Ready", icon: Rocket },
               ].map(({ stepId, label, icon: Icon }, i) => (
                 <button
                   key={stepId}
                   type="button"
-                  disabled={stepId === "launch" && !approved}
+                  disabled={stepId === "review" && !validateAllQuestions()}
                   onClick={() => {
                     if (stepId === "review" && !validateAllQuestions()) return;
-                    if (stepId === "launch" && !approved) return;
                     setStep(stepId);
                   }}
-                  className={`relative flex items-center gap-3 px-8 py-4 rounded-[2rem] text-sm font-black transition-all duration-500 z-10 ${
+                  className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 z-10 ${
                     step === stepId
                       ? "text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-30 disabled:hover:bg-transparent"
                   }`}
                 >
                   {step === stepId && (
-                    <div className="absolute inset-0 bg-primary shadow-2xl shadow-primary/30 rounded-[2rem] -z-10 animate-in fade-in zoom-in-95 duration-500" />
+                    <div className="absolute inset-0 bg-primary shadow-lg shadow-primary/20 rounded-xl -z-10 animate-in fade-in zoom-in-95 duration-300" />
                   )}
-                  <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-[10px] font-black transition-all duration-500 ${
-                    step === stepId ? "bg-white/20 text-white rotate-[360deg]" : "bg-muted text-muted-foreground"
+                  <div className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-black transition-all ${
+                    step === stepId ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
                   }`}>
                     {i + 1}
                   </div>
-                  <Icon className={`w-4 h-4 transition-all duration-500 ${step === stepId ? "scale-110" : "opacity-60"}`} />
-                  <span className="tracking-tight uppercase tracking-[0.05em]">{label}</span>
+                  <Icon className={`w-3.5 h-3.5 transition-all ${step === stepId || (step === "launch" && stepId === "review") ? "scale-105" : "opacity-60"}`} />
+                  <span className="tracking-tight uppercase tracking-[0.04em]">{label}</span>
                 </button>
               ))}
             </div>
@@ -497,64 +513,6 @@ export default function QuestionsSetupPage() {
                 </Button>
               </div>
             </Card>
-          ) : step === "launch" ? (
-            <div className="max-w-3xl mx-auto py-12 animate-in fade-in zoom-in duration-700">
-              <Card className="rounded-[3rem] border-border/40 bg-card/50 backdrop-blur-xl p-12 shadow-2xl shadow-primary/10 overflow-hidden relative">
-                <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
-                  <Rocket className="w-64 h-64 text-primary" />
-                </div>
-                
-                <div className="relative z-10 text-center space-y-8">
-                  <div className="mx-auto w-24 h-24 rounded-[2.5rem] bg-green-500/10 flex items-center justify-center mb-6 ring-8 ring-green-500/5 shadow-inner animate-bounce duration-[3000ms]">
-                    <CheckCircle className="w-12 h-12 text-green-500" />
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <h2 className="text-4xl font-black tracking-tight text-foreground/90">Project is Live!</h2>
-                    <p className="text-xl text-muted-foreground font-medium max-w-lg mx-auto leading-relaxed">
-                      Your screening criteria and evaluation rubrics are finalized. You're ready to start interviewing candidates.
-                    </p>
-                  </div>
-
-                  <div className="grid sm:grid-cols-2 gap-4 pt-8">
-                    <Link href={`/projects/${id}/interviews`}>
-                      <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer">
-                        <div className="space-y-4">
-                          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <User className="w-6 h-6 text-primary" />
-                          </div>
-                          <div className="text-left">
-                            <h4 className="font-black text-lg">Add Candidates</h4>
-                            <p className="text-sm text-muted-foreground font-medium">Invite applicants to start their screening session.</p>
-                          </div>
-                        </div>
-                      </Card>
-                    </Link>
-
-                    <Link href="/dashboard">
-                      <Card className="rounded-3xl border-border/40 bg-background/50 p-8 hover:border-primary/40 hover:shadow-lg transition-all group cursor-pointer">
-                        <div className="space-y-4">
-                          <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <Settings className="w-6 h-6 text-muted-foreground" />
-                          </div>
-                          <div className="text-left">
-                            <h4 className="font-black text-lg">Project Dashboard</h4>
-                            <p className="text-sm text-muted-foreground font-medium">View your workspace and manage other projects.</p>
-                          </div>
-                        </div>
-                      </Card>
-                    </Link>
-                  </div>
-
-                  <div className="pt-8 border-t border-border/40">
-                    <div className="flex items-center justify-center gap-2 text-sm font-bold text-muted-foreground/60 uppercase tracking-widest">
-                      <Sparkles className="w-4 h-4" />
-                      Powered by Candiq AI
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
           ) : step === "review" ? (
             <div className="grid gap-10 pb-20 max-w-4xl mx-auto">
               {groupedQuestions.map(({ competency, questions: compQuestions }, idx) => {
@@ -594,7 +552,7 @@ export default function QuestionsSetupPage() {
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-green-600">
                                     <CheckCircle className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Good Signal</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Good Answer</span>
                                   </div>
                                   <ul className="space-y-2 pl-1">
                                     {q.rubric.goodSignals?.map((s, i) => (
@@ -622,7 +580,7 @@ export default function QuestionsSetupPage() {
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-amber-600">
                                     <AlertCircle className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Poor / Flag</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Bad Answer</span>
                                   </div>
                                   <ul className="space-y-2 pl-1">
                                     {q.rubric.poorSignals?.map((s, i) => (

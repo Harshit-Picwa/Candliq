@@ -5,8 +5,6 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
-import { extractTextFromPDF, validatePDF } from "./services/pdf-parser";
-import { uploadPDF } from "./middleware/upload";
 import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project } from "@shared/schema";
 
 // Extend Express.User type to include our user properties
@@ -91,6 +89,7 @@ export async function registerRoutes(
         "interviewDuration",
         "introMinutes",
         "closureMinutes",
+        "totalMinutes",
         "screeningQuestionsJson",
         "competencyRubricJson",
       ] as const;
@@ -116,35 +115,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting project:", error);
       res.status(500).json({ error: "Failed to delete project" });
-    }
-  });
-
-  app.post("/api/projects/:id/upload-jd", isAuthenticated, uploadPDF, async (req, res) => {
-    try {
-      const project = await storage.getProject(parseInt(req.params.id));
-      if (!project) return res.status(404).json({ error: "Project not found" });
-
-      if (!req.file) {
-        return res.status(400).json({ error: "No PDF file uploaded" });
-      }
-
-      // Validate PDF
-      if (!validatePDF(req.file.buffer)) {
-        return res.status(400).json({ error: "Invalid PDF file" });
-      }
-
-      // Extract text from PDF
-      const extractedText = await extractTextFromPDF(req.file.buffer);
-
-      // Update project with extracted text
-      const updated = await storage.updateProject(project.id, {
-        jdText: extractedText,
-      });
-
-      res.json(updated);
-    } catch (error: any) {
-      console.error("Error uploading PDF:", error);
-      res.status(500).json({ error: "Failed to upload PDF", details: error?.message });
     }
   });
 
