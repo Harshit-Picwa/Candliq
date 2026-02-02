@@ -32,15 +32,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-function AutoResizeTextarea({ 
-  value, 
-  onChange, 
-  className, 
+function AutoResizeTextarea({
+  value,
+  onChange,
+  className,
   placeholder,
-  ...props 
-}: { 
-  value: string; 
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; 
+  ...props
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   className?: string;
   placeholder?: string;
   [key: string]: any;
@@ -133,7 +133,10 @@ export default function QuestionsSetupPage() {
 
   const regenerateQuestions = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", `/api/projects/${id}/generate-questions`);
+      // Use regenerate endpoint so we don't repeat previous questions.
+      return apiRequest("POST", `/api/projects/${id}/regenerate-questions`, {
+        customInstructions: "",
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
@@ -169,22 +172,22 @@ export default function QuestionsSetupPage() {
       setIsRefiningIndividual(false);
       setIsRefiningSelected(false);
       setSelectedForRefine(new Set());
-      
+
       let title = "Questions refined";
       if (variables.questionId) title = "Question refined";
       else if (variables.questionIds) title = `${variables.questionIds.length} Questions refined`;
 
-      toast({ 
-        title, 
-        description: variables.questionId 
-          ? "The question has been refined based on your instructions." 
-          : "The questions have been updated with your custom instructions." 
+      toast({
+        title,
+        description: variables.questionId
+          ? "The question has been refined based on your instructions."
+          : "The questions have been updated with your custom instructions."
       });
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Error", 
-        description: error?.message || "Failed to refine questions. Try again or regenerate all.", 
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to refine questions. Try again or regenerate all.",
         variant: "destructive",
         action: (
           <Button variant="outline" size="sm" onClick={() => regenerateQuestions.mutate()}>
@@ -198,13 +201,13 @@ export default function QuestionsSetupPage() {
   const updateQuestion = (qId: string, updates: Partial<ScreeningQuestion>) => {
     const updatedQuestions = questions.map(q => q.id === qId ? { ...q, ...updates } : q);
     setQuestions(updatedQuestions);
-    
+
     // Mark as edited if question text changed
     if (updates.question !== undefined) {
       const newEdited = new Set(editedQuestionIds);
       newEdited.add(qId);
       setEditedQuestionIds(newEdited);
-      
+
       // Validate question text
       const question = updatedQuestions.find(q => q.id === qId);
       if (question && !question.question.trim()) {
@@ -217,7 +220,7 @@ export default function QuestionsSetupPage() {
         setInvalidQuestionIds(newInvalid);
       }
     }
-    
+
     setHasChanges(true);
     setApproved(false); // Unapprove if questions are edited
   };
@@ -230,7 +233,7 @@ export default function QuestionsSetupPage() {
     const competencyQuestions = questions
       .filter(q => q.competencyId === competencyId)
       .sort((a, b) => a.order - b.order);
-    
+
     const compIndex = competencyQuestions.findIndex(q => q.id === qId);
     if (compIndex === -1) return;
 
@@ -295,8 +298,8 @@ export default function QuestionsSetupPage() {
       return;
     }
     setApproved(true);
-    toast({ 
-      title: "Project Ready!", 
+    toast({
+      title: "Project Ready!",
       description: "Your screening criteria are finalized. You can now add candidates.",
     });
     navigate(`/projects/${id}/interviews`);
@@ -372,7 +375,7 @@ export default function QuestionsSetupPage() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
               {step === "edit" ? (
                 <>
@@ -445,6 +448,7 @@ export default function QuestionsSetupPage() {
                 if (s === 3) navigate(`/projects/${id}/interviews`);
               }}
               clickableStages={[1, 2, 3]}
+              questionCount={questionCount}
             />
           </div>
           <div className="flex items-center justify-center mb-3">
@@ -465,18 +469,16 @@ export default function QuestionsSetupPage() {
                     if (stepId === "review" && !validateAllQuestions()) return;
                     setStep(stepId);
                   }}
-                  className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 z-10 ${
-                    step === stepId
-                      ? "text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-30 disabled:hover:bg-transparent"
-                  }`}
+                  className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 z-10 ${step === stepId
+                    ? "text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-30 disabled:hover:bg-transparent"
+                    }`}
                 >
                   {step === stepId && (
                     <div className="absolute inset-0 bg-primary shadow-lg shadow-primary/20 rounded-xl -z-10 animate-in fade-in zoom-in-95 duration-300" />
                   )}
-                  <div className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-black transition-all ${
-                    step === stepId ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
-                  }`}>
+                  <div className={`flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-black transition-all ${step === stepId ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                    }`}>
                     {i + 1}
                   </div>
                   <Icon className={`w-3.5 h-3.5 transition-all ${step === stepId || (step === "launch" && stepId === "review") ? "scale-105" : "opacity-60"}`} />
@@ -530,7 +532,7 @@ export default function QuestionsSetupPage() {
                         <p className="text-xs text-muted-foreground font-medium">{competency.description}</p>
                       </div>
                     </div>
-                    
+
                     <div className="grid gap-4">
                       {selectedCompQuestions.map((q) => (
                         <Card key={q.id} className="rounded-2xl border-border/40 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group">
@@ -547,7 +549,7 @@ export default function QuestionsSetupPage() {
                                   {q.rubric.typicalReasoning || "No reasoning criteria provided."}
                                 </p>
                               </div>
-                              
+
                               <div className="grid sm:grid-cols-3 gap-6">
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-green-600">
@@ -659,11 +661,11 @@ export default function QuestionsSetupPage() {
                                 {isRefiningIndividual ? "Refine Question" : isRefiningSelected ? `Refine ${selectedForRefine.size} Questions` : "Refine All Questions"}
                               </DialogTitle>
                               <DialogDescription className="text-sm">
-                                {isRefiningIndividual 
-                                  ? "Provide specific instructions to improve this question." 
+                                {isRefiningIndividual
+                                  ? "Provide specific instructions to improve this question."
                                   : isRefiningSelected
                                     ? "Update only the selected questions. Their rubrics will be rebuilt."
-                                    : "Update the generation logic for all questions. This will rebuild your screening list."}
+                                    : "Update all questions based on your instructions. This will refine your existing list rather than generating new questions."}
                               </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 py-4">
@@ -680,17 +682,19 @@ export default function QuestionsSetupPage() {
                               />
                             </div>
                             <DialogFooter className="gap-2 sm:gap-0">
+
                               <Button variant="ghost" className="rounded-xl" onClick={() => {
                                 setShowRefineDialog(false);
                                 setIsRefiningIndividual(false);
                                 setIsRefiningSelected(false);
                               }}>Cancel</Button>
-                              <Button 
+                              <Button
                                 className="rounded-xl gap-2 font-bold px-6 shadow-lg shadow-primary/20"
-                                onClick={() => refineQuestions.mutate({ 
-                                  instructions: customInstructions, 
+                                onClick={() => refineQuestions.mutate({
+                                  instructions: customInstructions,
                                   questionId: isRefiningIndividual ? selectedQuestionId || undefined : undefined,
-                                  questionIds: isRefiningSelected ? Array.from(selectedForRefine) : undefined
+                                  // Use currently displayed questions when "Refine All" is clicked
+                                  questionIds: isRefiningIndividual ? undefined : (isRefiningSelected ? Array.from(selectedForRefine) : questions.map(q => q.id))
                                 })}
                                 disabled={refineQuestions.isPending}
                               >
@@ -702,7 +706,7 @@ export default function QuestionsSetupPage() {
                                 ) : (
                                   <>
                                     <Sparkles className="w-4 h-4" />
-                                    {isRefiningIndividual || isRefiningSelected ? "Refine Now" : "Regenerate All"}
+                                    {isRefiningIndividual ? "Refine Question" : isRefiningSelected ? "Refine Selected" : "Refine All"}
                                   </>
                                 )}
                               </Button>
@@ -738,11 +742,10 @@ export default function QuestionsSetupPage() {
                                     key={question.id}
                                     data-testid={`question-item-${question.id}`}
                                     onClick={() => setSelectedQuestionId(question.id)}
-                                    className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden ${
-                                      selectedQuestionId === question.id
-                                        ? "ring-1 ring-primary border-primary shadow-xl shadow-primary/5 bg-background"
-                                        : "hover:bg-card/80 bg-card border-border/40 shadow-sm"
-                                    } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : ""}`}
+                                    className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden ${selectedQuestionId === question.id
+                                      ? "ring-1 ring-primary border-primary shadow-xl shadow-primary/5 bg-background"
+                                      : "hover:bg-card/80 bg-card border-border/40 shadow-sm"
+                                      } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : ""}`}
                                   >
                                     {selectedQuestionId === question.id && (
                                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
@@ -750,12 +753,11 @@ export default function QuestionsSetupPage() {
                                     <div className="p-5">
                                       <div className="flex items-start gap-4">
                                         <div className="flex flex-col items-center gap-2 shrink-0">
-                                          <div 
-                                            className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 transition-all cursor-pointer ${
-                                              selectedForRefine.has(question.id)
-                                                ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
-                                                : "border-border/60 bg-muted hover:border-primary/40"
-                                            }`}
+                                          <div
+                                            className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 transition-all cursor-pointer ${selectedForRefine.has(question.id)
+                                              ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                                              : "border-border/60 bg-muted hover:border-primary/40"
+                                              }`}
                                             onClick={(e: React.MouseEvent) => {
                                               e.stopPropagation();
                                               const newSet = new Set(selectedForRefine);
@@ -799,16 +801,15 @@ export default function QuestionsSetupPage() {
                                             </Button>
                                           </div>
                                         </div>
-                                        
+
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-start justify-between gap-4 mb-3">
                                             <AutoResizeTextarea
                                               value={question.question}
                                               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateQuestion(question.id, { question: e.target.value })}
                                               onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                                              className={`w-full text-base font-semibold leading-relaxed tracking-tight ${
-                                                invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
-                                              }`}
+                                              className={`w-full text-base font-semibold leading-relaxed tracking-tight ${invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
+                                                }`}
                                               placeholder="Enter question text..."
                                             />
                                             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -850,9 +851,9 @@ export default function QuestionsSetupPage() {
                                               </TooltipProvider>
                                             </div>
                                           </div>
-                                          
+
                                           <div className="flex items-center justify-between border-t border-border/40 pt-4">
-                                            <div 
+                                            <div
                                               className="flex items-center gap-2.5 cursor-pointer group/check"
                                               onClick={(e: React.MouseEvent) => {
                                                 e.stopPropagation();
@@ -864,13 +865,12 @@ export default function QuestionsSetupPage() {
                                                 onCheckedChange={() => toggleMandatory(question.id)}
                                                 className="h-4.5 w-4.5 rounded-md data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                                               />
-                                              <span className={`text-xs font-bold transition-colors ${
-                                                question.isMandatory ? "text-primary" : "text-muted-foreground group-hover/check:text-foreground"
-                                              }`}>
+                                              <span className={`text-xs font-bold transition-colors ${question.isMandatory ? "text-primary" : "text-muted-foreground group-hover/check:text-foreground"
+                                                }`}>
                                                 {question.isMandatory ? "Included in interview" : "Exclude from interview"}
                                               </span>
                                             </div>
-                                            
+
                                             <div className="flex items-center gap-2">
                                               {!editedQuestionIds.has(question.id) ? (
                                                 <Badge variant="outline" className="bg-primary/5 text-primary border-primary/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider">
@@ -912,7 +912,7 @@ export default function QuestionsSetupPage() {
                         : "Select a question on the left to see criteria"}
                     </CardDescription>
                   </div>
-                  
+
                   <ScrollArea className="flex-1 pr-4 -mr-4 scrollbar-visible">
                     {selectedQuestion ? (
                       <CardContent className="space-y-8 p-8">
@@ -926,7 +926,7 @@ export default function QuestionsSetupPage() {
                             </p>
                           </div>
                         </div>
-                        
+
                         <div className="space-y-6">
                           <div className="space-y-3">
                             <h4 className="text-[10px] font-black uppercase tracking-[0.1em] text-green-600/80 flex items-center gap-2">
@@ -1001,12 +1001,12 @@ export default function QuestionsSetupPage() {
                       </div>
                     )}
                   </ScrollArea>
-                  
+
                   {selectedQuestion && (
                     <div className="p-4 bg-muted/30 border-t border-border/40">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="w-full rounded-xl gap-2 font-bold text-xs h-9 bg-background border-border/60 shadow-sm"
                         onClick={() => {
                           setIsRefiningIndividual(true);

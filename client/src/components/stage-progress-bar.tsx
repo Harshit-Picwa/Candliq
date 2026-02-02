@@ -32,6 +32,8 @@ interface StageProgressBarProps {
   onStageClick?: (stage: CurrentStage) => void;
   /** Stages that can be navigated to (e.g. [3] = only Ready is clickable when approved) */
   clickableStages?: CurrentStage[];
+  /** Optional count to display (e.g. number of questions) in stage 2 */
+  questionCount?: number;
 }
 
 /**
@@ -40,7 +42,7 @@ interface StageProgressBarProps {
  * 2. Refine & review → Approve questions
  * 3. Ready for interview
  */
-export function StageProgressBar({ currentStage, className, onStageClick, clickableStages }: StageProgressBarProps) {
+export function StageProgressBar({ currentStage, className, onStageClick, clickableStages, questionCount }: StageProgressBarProps) {
   const progressPercent = (currentStage / 3) * 100;
 
   return (
@@ -70,12 +72,12 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 border transition-all min-w-0 flex-1",
                   isComplete &&
-                    "bg-primary/5 border-primary/20 text-primary",
+                  "bg-primary/5 border-primary/20 text-primary",
                   isCurrent &&
-                    "bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20",
+                  "bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20",
                   !isComplete &&
-                    !isCurrent &&
-                    "bg-muted/30 border-border/50 text-muted-foreground",
+                  !isCurrent &&
+                  "bg-muted/30 border-border/50 text-muted-foreground",
                   isClickable && "cursor-pointer hover:opacity-90"
                 )}
               >
@@ -108,7 +110,7 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
                       isCurrent ? "text-primary-foreground/80" : "text-muted-foreground"
                     )}
                   >
-                    {sublabel}
+                    {stage === 2 && questionCount ? `Approve ${questionCount} questions` : sublabel}
                   </p>
                 </div>
               </div>

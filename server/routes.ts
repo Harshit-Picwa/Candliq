@@ -128,7 +128,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Job description is required. Please add a job description before generating questions." });
       }
 
-      console.log("[generate-questions] Calling Gemini with JD length:", project.jdText.length);
+      console.log("[generate-questions] Calling Gemini with JD length:", project.jdText.length, "screening minutes:", project.interviewDuration);
       const { competencies, questions } = await extractCompetenciesAndQuestions(
         project.jdText,
         project.smeNotesText || undefined,
@@ -161,12 +161,14 @@ export async function registerRoutes(
       const { customInstructions } = req.body;
 
       console.log("[regenerate-questions] Calling Gemini with custom instructions:", customInstructions?.substring(0, 50));
+      const existingQuestions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
       const { competencies, questions } = await regenerateQuestionsWithInstructions(
         project.jdText,
         project.smeNotesText || undefined,
         customInstructions || undefined,
         project.companyWebsite || undefined,
-        project.interviewDuration || undefined
+        project.interviewDuration || undefined,
+        existingQuestions
       );
       console.log("[regenerate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 
