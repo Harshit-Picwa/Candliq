@@ -15,8 +15,9 @@ import QuestionsSetupPage from "@/pages/questions-setup";
 import InterviewsListPage from "@/pages/interviews-list";
 import InterviewCockpitPage from "@/pages/interview-cockpit";
 import InterviewReportPage from "@/pages/interview-report";
+import AccountPage from "@/pages/account";
 
-const protectedRoutes = ["/dashboard", "/projects", "/interviews"];
+const protectedRoutes = ["/dashboard", "/projects", "/interviews", "/account"];
 
 function AuthenticatedRouter() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -87,6 +88,7 @@ function AuthenticatedRouter() {
           <Route path="/projects/:id/interviews" component={InterviewsListPage} />
           <Route path="/interviews/:id/cockpit" component={InterviewCockpitPage} />
           <Route path="/interviews/:id/report" component={InterviewReportPage} />
+          <Route path="/account" component={AccountPage} />
           <Route path="/" component={DashboardPage} />
           <Route component={NotFound} />
         </>

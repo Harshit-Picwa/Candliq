@@ -85,6 +85,14 @@ export function Header() {
                   </div>
                 </div>
                 <DropdownMenuSeparator className="mx-1 my-1" />
+                <Link href="/account">
+                  <DropdownMenuItem className="flex items-center gap-3 p-3 rounded-lg cursor-pointer font-bold transition-all focus:bg-primary/5 focus:text-primary">
+                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <User className="h-4 w-4" />
+                    </div>
+                    My Account
+                  </DropdownMenuItem>
+                </Link>
                 <DropdownMenuItem 
                   onClick={() => logout()}
                   className="flex items-center gap-3 p-3 rounded-lg cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 font-bold transition-all" 

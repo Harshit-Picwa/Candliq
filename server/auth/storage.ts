@@ -8,6 +8,7 @@ export interface IAuthStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(userData: Omit<UpsertUser, "id">): Promise<User>;
   upsertUser(userData: UpsertUser): Promise<User>;
+  updateUser(id: string, userData: Partial<Omit<User, "id" | "email" | "passwordHash" | "createdAt" | "updatedAt">>): Promise<User>;
 }
 
 class AuthStorage implements IAuthStorage {
@@ -60,6 +61,18 @@ class AuthStorage implements IAuthStorage {
       } as Prisma.UserUpdateInput,
     });
     console.log(`[auth/storage] User upserted: ${user.id} (${user.email})`);
+    return user as User;
+  }
+
+  async updateUser(id: string, userData: Partial<Omit<User, "id" | "email" | "passwordHash" | "createdAt" | "updatedAt">>): Promise<User> {
+    console.log(`[auth/storage] Updating user: ${id}`);
+    const user = await db.user.update({
+      where: { id },
+      data: {
+        ...userData,
+        updatedAt: new Date(),
+      } as Prisma.UserUpdateInput,
+    });
     return user as User;
   }
 }

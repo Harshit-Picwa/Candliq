@@ -52,6 +52,27 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
+  // Update user profile
+  app.patch("/api/auth/profile", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { firstName, lastName, profileImageUrl } = req.body;
+      
+      const updatedUser = await authStorage.updateUser(userId, {
+        firstName,
+        lastName,
+        profileImageUrl
+      });
+      
+      // Don't send password hash
+      const { passwordHash, ...userWithoutPassword } = updatedUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("[auth/profile] Error updating profile:", error);
+      res.status(500).json({ error: "Failed to update profile", details: error?.message });
+    }
+  });
+
   // Debug endpoint to check session state
   app.get("/api/auth/debug", async (req: any, res) => {
     res.json({

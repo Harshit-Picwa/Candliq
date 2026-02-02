@@ -8,6 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Header } from "@/components/header";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -33,6 +43,7 @@ export default function ProjectSetupPage() {
   const [closureMinutes, setClosureMinutes] = useState<number>(2);
   const [totalDuration, setTotalDuration] = useState<number>(34); // Sum of above
   const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1);
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -399,25 +410,46 @@ export default function ProjectSetupPage() {
                     <ChevronLeft className="w-4 h-4" />
                     Back
                   </Button>
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={generateQuestions.isPending || !jdText.trim()}
-                    className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                    data-testid="button-generate-questions"
-                  >
-                    {generateQuestions.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Generating Rubric...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        Generate Questions
-                        <ChevronRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </Button>
+                  
+                  <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
+                    <Button
+                      onClick={() => setShowGenerateConfirm(true)}
+                      disabled={generateQuestions.isPending || !jdText.trim()}
+                      className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                      data-testid="button-generate-questions"
+                    >
+                      {generateQuestions.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating Rubric...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          Generate Questions
+                          <ChevronRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </Button>
+                    <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="text-xl font-black">Generate Questions?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-base font-medium">
+                          This will use AI to analyze your job description and generate specific screening questions. 
+                          Please ensure you have filled in the details properly before proceeding.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="gap-3">
+                        <AlertDialogCancel className="rounded-xl font-bold">Review Details</AlertDialogCancel>
+                        <AlertDialogAction 
+                          onClick={handleGenerate}
+                          className="rounded-xl font-bold bg-primary hover:bg-primary/90"
+                        >
+                          Confirm & Generate
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </CardContent>
             </Card>
