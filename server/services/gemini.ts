@@ -279,7 +279,7 @@ Instructions for Output:
 5. NO REVERSE QUESTIONS: Do not generate questions that ask the candidate if they have questions for the interviewer (e.g., "What questions do you have for me?"). Every question must be a technical or scenario-based evaluation of the candidate.
 6. UNIQUE AND NON-REPETITIVE: Every question in this set MUST be completely unique from the others. Do not repeat the same concept across different questions. If you are provided with "EXISTING QUESTIONS" above, do not repeat or paraphrase them in any way.
 7. For each question, provide a rubric EXPLICITLY DESIGNED for a non-technical HR interviewer to use for grading as a **'Strength-Assessment' tool**:
-   - typicalReasoning: Detailed explanation of the technical 'why' behind the question and what a successful candidate's thought process should look like.
+   - typicalReasoning: A short, declarative paragraph (2–4 sentences) that (1) states what the question is probing and why it matters, (2) names the key concepts or approaches a strong answer must address, and (3) describes what good reasoning looks like in practice. Write in clear, direct statements (e.g. "A strong answer will…", "The ideal response addresses…"). Avoid vague phrases like "the candidate should talk about X"; instead explain what a good answer contains and how it demonstrates competence.
    - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement that includes the actual domain terms, tools, or logic the candidate should use (e.g., "Explains how 'Redux' state is handled via 'Actions' and 'Reducers' to ensure predictable state transitions").
    - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. These are answers that are technically correct but broad, lacking the depth or naming conventions of the best answers (e.g., "Describes state management generally but misses the specific flow of data through Reducers").
    - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators. These describe 'Bad' or incorrect logic that a non-technical interviewer can spot (e.g., "Suggests handling state by directly mutating the DOM or using global variables, which leads to bugs").
@@ -304,7 +304,7 @@ Respond with a JSON object in this exact format:
       "competencyId": "comp_1",
       "question": "How would you handle unexpected errors in a FastAPI end-point to ensure the client receives a clear message?",
       "rubric": {
-        "typicalReasoning": "The candidate should describe a strategy that uses structured exception handling to avoid server crashes and provide friendly API responses.",
+        "typicalReasoning": "This question probes whether the candidate can design robust error handling so APIs fail gracefully and clients get clear, actionable feedback. A strong answer will explicitly address structured exception handling (e.g. try/except or framework-specific handlers), distinguish between client errors (4xx) and server errors (5xx), and describe returning consistent JSON error payloads. Good reasoning shows they have implemented this in production—for example using global exception handlers, validation before business logic, and logging without exposing internals to the client.",
         "goodSignals": [
           "BEST: Explicitly mentions using 'HTTPException' from the fastapi library with proper status codes (e.g., 400 or 404).",
           "BEST: Describes creating a 'Global Exception Handler' to catch and log errors in a centralized way.",
@@ -583,7 +583,7 @@ ${instructions}
 Instructions:
 1. Refine the question text to be more effective, technical, and role-specific. Avoid generic or "fluff" phrasing. Use "technical skills" where appropriate. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
 2. Update the rubric (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) to match the new question.
-   - typicalReasoning: Detailed explanation of the technical 'why' behind the question and what a successful candidate's thought process should look like.
+   - typicalReasoning: A short, declarative paragraph (2–4 sentences): (1) what the question is probing and why it matters, (2) the key concepts a strong answer must address, (3) what good reasoning looks like. Use direct statements ("A strong answer will…", "The ideal response addresses…"). Avoid vague "the candidate should talk about X"; explain what a good answer contains and how it demonstrates competence.
    - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").
    - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. Technically correct but lacking depth (e.g., "MODERATE: Mentions X generally").
    - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators (e.g., "RED FLAG: Suggests X or cannot explain Y").
@@ -636,7 +636,7 @@ ${instructions}
 Instructions:
 1. Refine each question text to be more effective, technical, and role-specific. Avoid generic phrasing. Use "technical skills" where appropriate. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
 2. Update the rubrics (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) for each refined question.
-   - typicalReasoning: Detailed explanation of the technical 'why' behind the question and what a successful candidate's thought process should look like.
+   - typicalReasoning: A short, declarative paragraph (2–4 sentences): (1) what the question is probing and why it matters, (2) the key concepts a strong answer must address, (3) what good reasoning looks like. Use direct statements ("A strong answer will…", "The ideal response addresses…"). Avoid vague "the candidate should talk about X"; explain what a good answer contains and how it demonstrates competence.
    - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").
    - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. Technically correct but lacking depth (e.g., "MODERATE: Mentions X generally").
    - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators (e.g., "RED FLAG: Suggests X or cannot explain Y").
