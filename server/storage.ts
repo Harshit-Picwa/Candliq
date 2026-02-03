@@ -13,7 +13,7 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: number, project: Partial<Project>): Promise<Project | undefined>;
   deleteProject(id: number): Promise<void>;
-  
+
   getInterviewsByProject(projectId: number): Promise<Interview[]>;
   getInterview(id: number): Promise<Interview | undefined>;
   createInterview(interview: InsertInterview): Promise<Interview>;
@@ -49,12 +49,16 @@ export class DatabaseStorage implements IStorage {
     "jdText",
     "smeNotesText",
     "companyWebsite",
+    "locationCity",
+    "locationState",
+    "locationCountry",
     "interviewDuration",
     "introMinutes",
     "closureMinutes",
     "totalMinutes",
     "screeningQuestionsJson",
     "competencyRubricJson",
+    "aiChatHistoryJson",
   ] as const;
 
   async updateProject(id: number, data: Partial<Project>): Promise<Project | undefined> {
@@ -64,12 +68,16 @@ export class DatabaseStorage implements IStorage {
     if (Object.prototype.hasOwnProperty.call(raw, "jdText")) payload.jdText = raw.jdText as string | null;
     if (Object.prototype.hasOwnProperty.call(raw, "smeNotesText")) payload.smeNotesText = raw.smeNotesText as string | null;
     if (Object.prototype.hasOwnProperty.call(raw, "companyWebsite")) payload.companyWebsite = raw.companyWebsite as string | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "locationCity")) (payload as Record<string, unknown>).locationCity = raw.locationCity as string | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "locationState")) (payload as Record<string, unknown>).locationState = raw.locationState as string | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "locationCountry")) (payload as Record<string, unknown>).locationCountry = raw.locationCountry as string | null;
     if (Object.prototype.hasOwnProperty.call(raw, "interviewDuration")) payload.interviewDuration = raw.interviewDuration as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "introMinutes")) payload.introMinutes = raw.introMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "closureMinutes")) payload.closureMinutes = raw.closureMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "totalMinutes")) (payload as Record<string, unknown>).totalMinutes = raw.totalMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "screeningQuestionsJson")) payload.screeningQuestionsJson = raw.screeningQuestionsJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
+    if (Object.prototype.hasOwnProperty.call(raw, "aiChatHistoryJson")) payload.aiChatHistory = raw.aiChatHistoryJson as Prisma.InputJsonValue;
     // Omit totalMinutes from update if Prisma client doesn't support it yet (run `npx prisma generate` after migration)
     const { totalMinutes: _tm, ...updateData } = payload as Record<string, unknown>;
     const updated = await db.project.update({
@@ -105,20 +113,20 @@ export class DatabaseStorage implements IStorage {
       interview.transcriptJson === null
         ? Prisma.JsonNull
         : interview.transcriptJson === undefined
-        ? undefined
-        : (interview.transcriptJson as unknown as Prisma.InputJsonValue);
+          ? undefined
+          : (interview.transcriptJson as unknown as Prisma.InputJsonValue);
     const reportJson =
       interview.reportJson === null
         ? Prisma.JsonNull
         : interview.reportJson === undefined
-        ? undefined
-        : (interview.reportJson as unknown as Prisma.InputJsonValue);
+          ? undefined
+          : (interview.reportJson as unknown as Prisma.InputJsonValue);
     const notesJson =
       interview.notesJson === null
         ? Prisma.JsonNull
         : interview.notesJson === undefined
-        ? undefined
-        : (interview.notesJson as unknown as Prisma.InputJsonValue);
+          ? undefined
+          : (interview.notesJson as unknown as Prisma.InputJsonValue);
     const created = await db.interview.create({
       data: {
         project: { connect: { id: interview.projectId } },

@@ -19,12 +19,16 @@ export const projects = pgTable("projects", {
   jdText: text("jd_text"),
   smeNotesText: text("sme_notes_text"),
   companyWebsite: varchar("company_website"),
+  locationCity: varchar("location_city", { length: 255 }),
+  locationState: varchar("location_state", { length: 255 }),
+  locationCountry: varchar("location_country", { length: 255 }),
   interviewDuration: integer("interview_duration"),
   introMinutes: integer("intro_minutes"),
   closureMinutes: integer("closure_minutes"),
   totalMinutes: integer("total_minutes"),
   competencyRubricJson: jsonb("competency_rubric_json").$type<Competency[]>(),
   screeningQuestionsJson: jsonb("screening_questions_json").$type<ScreeningQuestion[]>(),
+  aiChatHistoryJson: jsonb("ai_chat_history").$type<AIChatMessage[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -73,6 +77,11 @@ export interface ScreeningQuestion {
   isMandatory: boolean;
   order: number;
   isAsked?: boolean;
+}
+
+export interface AIChatMessage {
+  role: "user" | "model";
+  parts: { text: string }[];
 }
 
 export interface TranscriptEntry {

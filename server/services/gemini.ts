@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { Competency, ScreeningQuestion, InterviewReport, TranscriptEntry, AISuggestion, InterviewNotes, AnswerEvaluation } from "@shared/schema";
+import type { Competency, ScreeningQuestion, InterviewReport, TranscriptEntry, AISuggestion, InterviewNotes, AnswerEvaluation, AIChatMessage } from "@shared/schema";
 
 const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "";
 if (!apiKey) {
@@ -97,10 +97,9 @@ function isRetryableGeminiError(error: any) {
 
 function getGeminiModelCandidates() {
   const preferred = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-  // Fallbacks in case the preferred model is temporarily unavailable.
-  // (If a model doesn't exist for the user's account, the request will error and we'll try the next.)
-  const fallbacks = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
-  return [preferred, ...fallbacks].filter(Boolean);
+  // Updated for Feb 2026: Using Gemini 2.0 and 2.5 series as primary models.
+  const fallbacks = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.0-pro", "gemini-flash-latest"];
+  return [preferred, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
 }
 
 async function generateTextWithRetries(prompt: string) {
@@ -125,6 +124,48 @@ async function generateTextWithRetries(prompt: string) {
         const retryable = isRetryableGeminiError(error);
         const msg = String(error?.message || error);
         console.error(`[gemini] generateContent failed (model=${modelName}, attempt=${attempt}/${maxAttempts}):`, msg);
+
+        if (!retryable) break; // try next model
+
+        // Exponential-ish backoff
+        await sleep(350 * attempt * attempt);
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || "Unknown Gemini error"));
+}
+
+async function sendMessageWithRetries(prompt: string, history: AIChatMessage[] = []) {
+  if (!apiKey) {
+    throw new Error("GOOGLE_AI_API_KEY is not set. Please configure your API key in the environment variables.");
+  }
+
+  const models = getGeminiModelCandidates();
+  let lastError: any = null;
+
+  for (const modelName of models) {
+    const model = genAI.getGenerativeModel({ model: modelName });
+    const chat = model.startChat({
+      history: (history as any[]),
+    });
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const result = await chat.sendMessage(prompt);
+        const response = await result.response;
+        const newHistory = await chat.getHistory();
+        return {
+          text: response.text(),
+          modelName,
+          history: (newHistory as unknown as AIChatMessage[])
+        };
+      } catch (error: any) {
+        lastError = error;
+        const retryable = isRetryableGeminiError(error);
+        const msg = String(error?.message || error);
+        console.error(`[gemini] sendMessage failed (model=${modelName}, attempt=${attempt}/${maxAttempts}):`, msg);
 
         if (!retryable) break; // try next model
 
@@ -182,8 +223,9 @@ export async function extractCompetenciesAndQuestions(
   customInstructions?: string,
   companyWebsite?: string,
   interviewDuration?: number,
-  existingQuestions?: ScreeningQuestion[]
-): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[] }> {
+  existingQuestions?: ScreeningQuestion[],
+  chatHistory: AIChatMessage[] = []
+): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
   // Target question count rules:
   // - < 20 mins: 8 questions (range 6-8)
   // - 20-25 mins: 10 questions (range 8-10)
@@ -207,31 +249,43 @@ export async function extractCompetenciesAndQuestions(
     .filter((q): q is string => typeof q === "string" && q.trim().length > 0);
   const existingQuestionKeys = new Set(existingQuestionTexts.map(normalizeQuestionKey).filter(Boolean));
 
-  const prompt = `You are an expert HR consultant and interview coach. Analyze the following job description and extract key competencies, then generate screening interview questions for each competency.
+  const prompt = `You are a subject matter expert in the role that is being hired. 
+
+See the JD ${companyWebsite ? `from ${companyWebsite} ` : ""}attached for context.
+
+In addition to this, the role is being hired in Melbourne, Victoria. 
 
 JOB DESCRIPTION:
 ${jdText}
 
-${companyWebsite ? `COMPANY WEBSITE: ${companyWebsite}\nPlease research and understand the company's culture, values, and work environment. Adjust questions to align with the company's specific needs and culture.\n` : ""}
+Here are also some notes from the Subject Matter Expert for more context: 
+"${smeNotes || "Focus on key technical skills needed for the role."}"
 
-${smeNotes ? `SME NOTES (Subject Matter Expert guidance):\n${smeNotes}\n` : ""}
+You are wanting your hiring manager to ask some technical/skills questions that are easy for them to ask without subject matter expertise. The questions and answer must take no longer than ${interviewDuration || 15} minutes. 
+
+Create those questions, expected answers with a screening criteria (Good-fit answer, moderate-fit answer, bad-fit answer) that will be easy for the hiring manager to ask and also conclude if the candidate is a good-fit (Questions can be scenario based or actually asking about a skill directly). 
+
+The objective of this round from the hiring manager is to save time of the subject matter expert by reducing candidates that are clearly not a good-fit and ones that just answer buzzwords and lack needed experience/knowledge.
 
 ${customInstructions ? `ADDITIONAL INSTRUCTIONS:\n${customInstructions}\n` : ""}
 
 ${existingQuestionTexts.length ? `EXISTING QUESTIONS (DO NOT REPEAT OR PARAPHRASE THESE):\n${existingQuestionTexts.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nWhen regenerating, you MUST produce an entirely new set of questions that do not overlap in meaning with the above list. Avoid trivial rewording.\n` : ""}
 
-Instructions:
-1. Extract 3-5 key competencies from the job description${companyWebsite ? " and company context" : ""}
-2. Generate exactly ${targetQuestionCount} screening questions total, distributed across these competencies
-3. Ensure questions are well-distributed (not all questions for one competency)
-4. ${companyWebsite ? "Consider the company's culture and values when crafting questions. " : ""}For each question, provide a rubric with:
-   - typicalReasoning: What reasoning or approach should a good candidate show
-   - goodSignals: exactly 5 specific indicators of a strong answer (bullet-style, specific, role-relevant)
-   - moderateSignals: exactly 5 indicators of an average or acceptable answer (specific, not generic)
-   - poorSignals: exactly 5 specific red flags or weak indicators
-   - notes: Any special considerations for this question
+Instructions for Output:
+1. Extract 3-5 key competencies from the job description. Focus strictly on technical and role-specific skills.
+2. Generate exactly ${targetQuestionCount} screening questions total, distributed across these competencies.
+3. Ensure questions are well-distributed and deeply technical/role-oriented. A significant portion (at least 50%) must be **Scenario-Based** (e.g., "Given situation X, how would you handle it using tool Y?").
+4. ABSOLUTELY NO CULTURE-FIT OR SOFT-SKILLS QUESTIONS. Do not ask about personality, teamwork (unless technical collaboration like Git workflow), or "where they see themselves." Focus exclusively on the hard skills, domain knowledge, and operational proficiency required by the JD and SME notes.
+5. NO REVERSE QUESTIONS: Do not generate questions that ask the candidate if they have questions for the interviewer (e.g., "What questions do you have for me?"). Every question must be a technical or scenario-based evaluation of the candidate.
+6. UNIQUE AND NON-REPETITIVE: Every question in this set MUST be completely unique from the others. Do not repeat the same concept across different questions. If you are provided with "EXISTING QUESTIONS" above, do not repeat or paraphrase them in any way.
+7. For each question, provide a rubric EXPLICITLY DESIGNED for a non-technical HR interviewer to use for grading as a **'Strength-Assessment' tool**:
+   - typicalReasoning: Detailed explanation of the technical 'why' behind the question and what a successful candidate's thought process should look like.
+   - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement that includes the actual domain terms, tools, or logic the candidate should use (e.g., "Explains how 'Redux' state is handled via 'Actions' and 'Reducers' to ensure predictable state transitions").
+   - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. These are answers that are technically correct but broad, lacking the depth or naming conventions of the best answers (e.g., "Describes state management generally but misses the specific flow of data through Reducers").
+   - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators. These describe 'Bad' or incorrect logic that a non-technical interviewer can spot (e.g., "Suggests handling state by directly mutating the DOM or using global variables, which leads to bugs").
+   - notes: Specific domain-specific probing questions for the HR person to use if the initial answer is vague.
 
-CRITICAL: You must explicitly consider the Job Description provided above when crafting both the questions and the rubric segments. The questions must be highly relevant to the specific role and requirements described. Rubric content must be precise, role-specific, and include context from the job description (tools, domain, responsibilities) wherever relevant.
+CRITICAL: You are acting as a world-class Subject Matter Expert. The rubrics must be so precise and explanatory that an interviewer with NO domain knowledge can accurately distinguish between a junior, mid, and expert candidate just by comparing their verbal answer to these signals. Avoid generic filler. Direct matches to technical concepts from the JD are mandatory.
 
 IMPORTANT: You must generate exactly ${targetQuestionCount} questions total. Count them carefully.
 
@@ -240,21 +294,39 @@ Respond with a JSON object in this exact format:
   "competencies": [
     {
       "id": "comp_1",
-      "name": "Technical Problem Solving",
-      "description": "Ability to break down complex problems and develop systematic solutions"
+      "name": "Backend Development",
+      "description": "Proficiency in API design and server-side logic"
     }
   ],
   "questions": [
     {
       "id": "q_1",
       "competencyId": "comp_1",
-      "question": "Tell me about a time you solved a particularly challenging technical problem...",
+      "question": "How would you handle unexpected errors in a FastAPI end-point to ensure the client receives a clear message?",
       "rubric": {
-        "typicalReasoning": "The candidate should describe a systematic approach...",
-        "goodSignals": ["Clear problem breakdown", "Multiple approaches considered"],
-        "moderateSignals": ["Solved the problem but with some help", "Reasonable approach but lacked depth"],
-        "poorSignals": ["Vague about actual contribution", "No mention of outcome"],
-        "notes": "Pay attention to whether they can articulate the problem clearly"
+        "typicalReasoning": "The candidate should describe a strategy that uses structured exception handling to avoid server crashes and provide friendly API responses.",
+        "goodSignals": [
+          "BEST: Explicitly mentions using 'HTTPException' from the fastapi library with proper status codes (e.g., 400 or 404).",
+          "BEST: Describes creating a 'Global Exception Handler' to catch and log errors in a centralized way.",
+          "BEST: Mentions using Pydantic for request validation to automatically catch schema errors before they reach logic.",
+          "BEST: Explains returning a structured JSON error body (e.g., { 'detail': 'error msg' }) for frontend consumption.",
+          "BEST: Mentions logging the full stack trace in internal logs (e.g., using 'logger.error') while hiding sensitive info from the user."
+        ],
+        "moderateSignals": [
+          "MODERATE: Suggests using basic 'try...except' blocks in every route but lacks a centralized strategy.",
+          "MODERATE: Mentions returning generic codes like 500 without specifying the exact error cause.",
+          "MODERATE: Suggests using 'print' statements for debugging instead of professional logging libraries.",
+          "MODERATE: Can explain what an error is but doesn't mention specific FastAPI or Pydantic features.",
+          "MODERATE: Mentions checking logs only as a reactive step after a crash occurs."
+        ],
+        "poorSignals": [
+          "RED FLAG: Suggests ignoring errors or letting the app crash and restart automatically.",
+          "RED FLAG: Unable to explain what an HTTP status code is or why it's used.",
+          "RED FLAG: Suggests catching all exceptions ('except Exception:') and doing nothing, which masks bugs.",
+          "RED FLAG: Confuses FastAPI's error handling with a frontend framework like React (e.g., 'I would use an ErrorBoundary').",
+          "RED FLAG: Cannot name a single library or tool for logging or structured error reporting."
+        ],
+        "notes": "Ask: 'How do you distinguish between an error caused by invalid input versus a database failure?'"
       },
       "isMandatory": true,
       "order": 1
@@ -265,7 +337,7 @@ Respond with a JSON object in this exact format:
 Only output valid JSON. No markdown code blocks.`;
 
   try {
-    const { text, modelName } = await generateTextWithRetries(prompt);
+    const { text, modelName, history: updatedHistory } = await sendMessageWithRetries(prompt, chatHistory);
 
     console.log("[gemini] Raw AI response length:", text.length);
     console.log("[gemini] Raw AI response preview:", text.substring(0, 200));
@@ -457,7 +529,7 @@ Respond with ONLY the full JSON object in the same format. No markdown.`;
     }
 
     console.log("[gemini] Final question count:", questions.length, "target:", targetQuestionCount);
-    return { competencies, questions };
+    return { competencies, questions, history: updatedHistory };
   } catch (error: any) {
     console.error("[gemini] AI API error:", error);
     console.error("[gemini] Error details:", {
@@ -480,27 +552,27 @@ export async function regenerateQuestionsWithInstructions(
   customInstructions?: string,
   companyWebsite?: string,
   interviewDuration?: number,
-  existingQuestions?: ScreeningQuestion[]
-): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[] }> {
+  existingQuestions?: ScreeningQuestion[],
+  chatHistory: AIChatMessage[] = []
+): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
   return extractCompetenciesAndQuestions(
     jdText,
     smeNotes,
     customInstructions,
     companyWebsite,
     interviewDuration,
-    existingQuestions
+    existingQuestions,
+    chatHistory
   );
 }
 
 export async function refineIndividualQuestion(
   jdText: string,
   question: ScreeningQuestion,
-  instructions: string
-): Promise<ScreeningQuestion> {
-  const prompt = `You are an expert HR consultant. Refine the following screening interview question based on the custom instructions and the Job Description.
-
-JOB DESCRIPTION:
-${jdText}
+  instructions: string,
+  chatHistory: AIChatMessage[] = []
+): Promise<{ question: ScreeningQuestion; history: AIChatMessage[] }> {
+  const prompt = `As a subject matter expert, refine the following screening interview question based on the custom instructions and the Job Description.
 
 CURRENT QUESTION:
 ${JSON.stringify(question, null, 2)}
@@ -509,11 +581,15 @@ CUSTOM INSTRUCTIONS:
 ${instructions}
 
 Instructions:
-1. Refine the question text to be more effective and relevant.
+1. Refine the question text to be more effective, technical, and role-specific. Avoid generic or "fluff" phrasing. Use "technical skills" where appropriate. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
 2. Update the rubric (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) to match the new question.
-   - goodSignals: exactly 5 specific indicators of a strong answer
-   - moderateSignals: exactly 5 indicators of an average/acceptable answer
-   - poorSignals: exactly 5 specific red flags or weak indicators
+   - typicalReasoning: Detailed explanation of the technical 'why' behind the question and what a successful candidate's thought process should look like.
+   - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").
+   - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. Technically correct but lacking depth (e.g., "MODERATE: Mentions X generally").
+   - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators (e.g., "RED FLAG: Suggests X or cannot explain Y").
+   - notes: Specific domain-specific probing questions for the HR person to use if the initial answer is vague.
+
+CRITICAL: The rubrics must be so precise and descriptive that a recruiter with NO technical knowledge can confidently grade the candidate's answer by mapping their words to these signals. Avoid generic signals like "Good communication" or "Seems knowledgeable". Use specific technical terminology.
 4. Continue to ensure the refined question stays within the scope of a standard screening question (approx 2-3 minutes to answer) so it does not disrupt the overall interview timeline.
 5. Keep the same competencyId and id.
 6. Respond with ONLY the refined question object in JSON format.
@@ -521,14 +597,7 @@ Instructions:
 Only output valid JSON object. No markdown code blocks.`;
 
   try {
-    if (!apiKey) {
-      throw new Error("GOOGLE_AI_API_KEY is not set.");
-    }
-
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { text, history: updatedHistory } = await sendMessageWithRetries(prompt, chatHistory);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
@@ -536,13 +605,14 @@ Only output valid JSON object. No markdown code blocks.`;
     }
 
     const q = safeJsonParse<any>(jsonMatch[0], "refined question");
-    return {
+    const refined = {
       ...q,
       id: question.id,
       competencyId: question.competencyId,
       order: question.order,
       isMandatory: question.isMandatory,
     };
+    return { question: refined, history: updatedHistory };
   } catch (error: any) {
     console.error("[gemini] Refine question error:", error);
     throw error;
@@ -552,12 +622,10 @@ Only output valid JSON object. No markdown code blocks.`;
 export async function refineMultipleQuestions(
   jdText: string,
   questions: ScreeningQuestion[],
-  instructions: string
-): Promise<ScreeningQuestion[]> {
-  const prompt = `You are an expert HR consultant. Refine the following ${questions.length} screening interview questions based on the custom instructions and the Job Description.
-
-JOB DESCRIPTION:
-${jdText}
+  instructions: string,
+  chatHistory: AIChatMessage[] = []
+): Promise<{ questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
+  const prompt = `As a subject matter expert, refine the following ${questions.length} screening interview questions based on the custom instructions and the Job Description.
 
 CURRENT QUESTIONS:
 ${JSON.stringify(questions, null, 2)}
@@ -566,11 +634,15 @@ CUSTOM INSTRUCTIONS:
 ${instructions}
 
 Instructions:
-1. Refine each question text to be more effective and relevant according to the instructions.
+1. Refine each question text to be more effective, technical, and role-specific. Avoid generic phrasing. Use "technical skills" where appropriate. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
 2. Update the rubrics (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) for each refined question.
-   - goodSignals: exactly 5 specific indicators of a strong answer
-   - moderateSignals: exactly 5 indicators of an average/acceptable answer
-   - poorSignals: exactly 5 specific red flags or weak indicators
+   - typicalReasoning: Detailed explanation of the technical 'why' behind the question and what a successful candidate's thought process should look like.
+   - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").
+   - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. Technically correct but lacking depth (e.g., "MODERATE: Mentions X generally").
+   - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators (e.g., "RED FLAG: Suggests X or cannot explain Y").
+   - notes: Specific domain-specific probing questions for the HR person to use if the initial answer is vague.
+
+CRITICAL: The rubrics must be so precise and descriptive that a recruiter with NO technical knowledge can confidently grade the candidate's answer by mapping their words to these signals. Avoid generic signals like "Good communication" or "Seems knowledgeable". Use specific technical terminology.
 3. Keep the same competencyId and id for each question.
 4. Continue to ensure the refined questions stay within the scope of a standard screening question (approx 2-3 minutes to answer) so they do not disrupt the overall interview timeline.
 5. Respond with a JSON object containing a "questions" array of refined question objects.
@@ -578,14 +650,7 @@ Instructions:
 Respond with ONLY the JSON object. No markdown code blocks.`;
 
   try {
-    if (!apiKey) {
-      throw new Error("GOOGLE_AI_API_KEY is not set.");
-    }
-
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { text, history: updatedHistory } = await sendMessageWithRetries(prompt, chatHistory);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
@@ -593,9 +658,9 @@ Respond with ONLY the JSON object. No markdown code blocks.`;
     }
 
     const parsed = safeJsonParse<any>(jsonMatch[0], "refined questions");
-    const refinedQuestions = parsed.questions || [];
+    const refinedBatch = parsed.questions || [];
 
-    return refinedQuestions.map((refined: any) => {
+    const refinedQuestions = refinedBatch.map((refined: any) => {
       const original = questions.find(q => q.id === refined.id);
       return {
         ...refined,
@@ -605,6 +670,8 @@ Respond with ONLY the JSON object. No markdown code blocks.`;
         isMandatory: refined.isMandatory ?? original?.isMandatory ?? true,
       };
     });
+
+    return { questions: refinedQuestions, history: updatedHistory };
   } catch (error: any) {
     console.error("[gemini] Refine multiple questions error:", error);
     throw error;
@@ -664,10 +731,7 @@ Only output valid JSON array. No markdown code blocks.`;
       return [];
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { text } = await generateTextWithRetries(prompt);
     const jsonMatch = text.match(/\[[\s\S]*\]/);
 
     if (!jsonMatch) return [];
@@ -721,12 +785,12 @@ Evaluate the candidate's answer and respond with a JSON object:
 }
 
 Guidelines:
-- "good": Answer demonstrates most good signals, clear reasoning, specific examples
-- "moderate": Answer shows some moderate signals or lacks depth
-- "poor": Answer shows poor signals, lacks specifics, or doesn't address the question well
-- Score: 1-5 (1=very weak, 3=moderate, 5=excellent)
-- List actual signals found in the answer
-- Be objective and evidence-based
+- "good": Answer demonstrates multiple specific "Good Signals" (e.g. named specific tools, algorithms, or patterns).
+- "moderate": Answer is correct but lacks technical specificity or depth of signals.
+- "poor": Answer hits "Poor Signals" or red flags (e.g. vague, confused, or generic).
+- Score: 1-5 (1=very weak, 3=moderate, 5=excellent).
+- Identify and list the PRECISE signals from the rubric that were found in the candidate's answer.
+- Be objective and lean toward evidence-based technical indicators.
 
 Only output valid JSON. No markdown code blocks.`;
 
@@ -742,10 +806,7 @@ Only output valid JSON. No markdown code blocks.`;
       };
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { text } = await generateTextWithRetries(prompt);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
@@ -857,10 +918,7 @@ Only output valid JSON. No markdown code blocks.`;
       throw new Error("GOOGLE_AI_API_KEY is not set. Please configure your API key in the environment variables.");
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { text } = await generateTextWithRetries(prompt);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {

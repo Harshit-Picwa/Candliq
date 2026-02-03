@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -91,8 +91,14 @@ export default function QuestionsSetupPage() {
   const [customInstructions, setCustomInstructions] = useState("");
   const [editedQuestionIds, setEditedQuestionIds] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
-  const [invalidQuestionIds, setInvalidQuestionIds] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<"edit" | "review" | "launch">("edit");
+  const invalidQuestionIds = useMemo(() => {
+    const invalidIds = questions
+      .filter((q) => !((q?.question ?? "").trim()))
+      .map((q) => q?.id)
+      .filter((id): id is string => Boolean(id));
+    return new Set(invalidIds);
+  }, [questions]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [isRefiningIndividual, setIsRefiningIndividual] = useState(false);
   const [selectedForRefine, setSelectedForRefine] = useState<Set<string>>(new Set());
@@ -105,11 +111,6 @@ export default function QuestionsSetupPage() {
       setQuestions(loadedQuestions);
       setCompetencies(loadedCompetencies);
       setSelectedQuestionId(null);
-      const invalid = new Set<string>();
-      loadedQuestions.forEach(q => {
-        if (!q.question.trim()) invalid.add(q.id);
-      });
-      setInvalidQuestionIds(invalid);
       setEditedQuestionIds(new Set());
     }
   }, [project]);
@@ -208,17 +209,6 @@ export default function QuestionsSetupPage() {
       newEdited.add(qId);
       setEditedQuestionIds(newEdited);
 
-      // Validate question text
-      const question = updatedQuestions.find(q => q.id === qId);
-      if (question && !question.question.trim()) {
-        const newInvalid = new Set(invalidQuestionIds);
-        newInvalid.add(qId);
-        setInvalidQuestionIds(newInvalid);
-      } else {
-        const newInvalid = new Set(invalidQuestionIds);
-        newInvalid.delete(qId);
-        setInvalidQuestionIds(newInvalid);
-      }
     }
 
     setHasChanges(true);
@@ -280,12 +270,10 @@ export default function QuestionsSetupPage() {
   const questionCount = questions.length;
 
   const validateAllQuestions = (): boolean => {
-    const invalid = questions.filter(q => !q.question.trim());
-    if (invalid.length > 0) {
-      setInvalidQuestionIds(new Set(invalid.map(q => q.id)));
+    if (invalidQuestionIds.size > 0) {
       toast({
         title: "Invalid questions",
-        description: `${invalid.length} question(s) are empty. Please fill in all questions.`,
+        description: `${invalidQuestionIds.size} question(s) are empty. Please fill in all questions.`,
         variant: "destructive",
       });
       return false;
@@ -464,7 +452,7 @@ export default function QuestionsSetupPage() {
                 <button
                   key={stepId}
                   type="button"
-                  disabled={stepId === "review" && !validateAllQuestions()}
+                  disabled={stepId === "review" && invalidQuestionIds.size > 0}
                   onClick={() => {
                     if (stepId === "review" && !validateAllQuestions()) return;
                     setStep(stepId);
@@ -805,7 +793,7 @@ export default function QuestionsSetupPage() {
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-start justify-between gap-4 mb-3">
                                             <AutoResizeTextarea
-                                              value={question.question}
+                                              value={question.question ?? ""}
                                               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateQuestion(question.id, { question: e.target.value })}
                                               onClick={(e: React.MouseEvent) => e.stopPropagation()}
                                               className={`w-full text-base font-semibold leading-relaxed tracking-tight ${invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"

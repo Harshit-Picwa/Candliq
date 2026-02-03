@@ -69,7 +69,7 @@ export async function registerRoutes(
       const userId = req.user.id;
       const { title } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
-      
+
       const project = await storage.createProject({ userId, title });
       res.status(201).json(project);
     } catch (error) {
@@ -86,6 +86,9 @@ export async function registerRoutes(
         "jdText",
         "smeNotesText",
         "companyWebsite",
+        "locationCity",
+        "locationState",
+        "locationCountry",
         "interviewDuration",
         "introMinutes",
         "closureMinutes",
@@ -129,18 +132,21 @@ export async function registerRoutes(
       }
 
       console.log("[generate-questions] Calling Gemini with JD length:", project.jdText.length, "screening minutes:", project.interviewDuration);
-      const { competencies, questions } = await extractCompetenciesAndQuestions(
+      const { competencies, questions, history } = await extractCompetenciesAndQuestions(
         project.jdText,
         project.smeNotesText || undefined,
         undefined, // customInstructions
         project.companyWebsite || undefined,
-        project.interviewDuration || undefined
+        project.interviewDuration || undefined,
+        undefined, // existing questions
+        (project.aiChatHistoryJson || []) as any
       );
       console.log("[generate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 
       const updated = await storage.updateProject(project.id, {
         competencyRubricJson: competencies,
         screeningQuestionsJson: questions,
+        aiChatHistoryJson: history as any,
       });
 
       console.log("[generate-questions] Updated project successfully");
@@ -162,19 +168,21 @@ export async function registerRoutes(
 
       console.log("[regenerate-questions] Calling Gemini with custom instructions:", customInstructions?.substring(0, 50));
       const existingQuestions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
-      const { competencies, questions } = await regenerateQuestionsWithInstructions(
+      const { competencies, questions, history } = await regenerateQuestionsWithInstructions(
         project.jdText,
         project.smeNotesText || undefined,
         customInstructions || undefined,
         project.companyWebsite || undefined,
         project.interviewDuration || undefined,
-        existingQuestions
+        existingQuestions,
+        (project.aiChatHistoryJson || []) as any
       );
       console.log("[regenerate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 
       const updated = await storage.updateProject(project.id, {
         competencyRubricJson: competencies,
         screeningQuestionsJson: questions,
+        aiChatHistoryJson: history as any,
       });
 
       res.json(updated);
@@ -198,16 +206,18 @@ export async function registerRoutes(
       if (questionIndex === -1) return res.status(404).json({ error: "Question not found" });
 
       console.log(`[refine-question] Refining question ${questionId} for project ${req.params.id}`);
-      const refinedQuestion = await refineIndividualQuestion(
+      const { question: refinedQuestion, history } = await refineIndividualQuestion(
         project.jdText,
         questions[questionIndex],
-        customInstructions || "Refine this question for better clarity and relevance."
+        customInstructions || "Refine this question for better clarity and relevance.",
+        (project.aiChatHistoryJson || []) as any
       );
 
       questions[questionIndex] = refinedQuestion;
 
       const updated = await storage.updateProject(project.id, {
         screeningQuestionsJson: questions,
+        aiChatHistoryJson: history as any,
       });
 
       res.json(updated);
@@ -230,26 +240,28 @@ export async function registerRoutes(
 
       const allQuestions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
       const questionsToRefine = allQuestions.filter(q => questionIds.includes(q.id));
-      
+
       if (questionsToRefine.length === 0) {
         return res.status(404).json({ error: "No matching questions found" });
       }
 
       console.log(`[refine-selected] Refining ${questionsToRefine.length} questions for project ${req.params.id}`);
-      const refinedBatch = await refineMultipleQuestions(
+      const { questions: refinedBatch, history } = await refineMultipleQuestions(
         project.jdText,
         questionsToRefine,
-        customInstructions || "Refine these questions for better clarity and relevance."
+        customInstructions || "Refine these questions for better clarity and relevance.",
+        (project.aiChatHistoryJson || []) as any
       );
 
       // Merge refined questions back into all questions
       const updatedQuestions = allQuestions.map(q => {
-        const refined = refinedBatch.find(r => r.id === q.id);
+        const refined = refinedBatch.find((r: any) => r.id === q.id);
         return refined || q;
       });
 
       const updated = await storage.updateProject(project.id, {
         screeningQuestionsJson: updatedQuestions,
+        aiChatHistoryJson: history as any,
       });
 
       res.json(updated);
@@ -273,16 +285,16 @@ export async function registerRoutes(
     try {
       const projectId = parseInt(req.params.id);
       const { candidateName, candidateEmail } = req.body;
-      
+
       if (!candidateName) return res.status(400).json({ error: "Candidate name is required" });
-      
+
       const interview = await storage.createInterview({
         projectId,
         candidateName,
         candidateEmail,
         status: "draft",
       });
-      
+
       res.status(201).json(interview);
     } catch (error) {
       console.error("Error creating interview:", error);
@@ -326,7 +338,7 @@ export async function registerRoutes(
     try {
       const interview = await storage.getInterview(parseInt(req.params.id));
       if (!interview) return res.status(404).json({ error: "Interview not found" });
-      
+
       const project = await storage.getProject(interview.projectId);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -366,25 +378,23 @@ export async function registerRoutes(
   httpServer.on("upgrade", (request, socket, head) => {
     const pathname = request.url || "";
     console.log("[WebSocket] Upgrade request for:", pathname);
-    
+
     const audioPathMatch = pathname.match(/^\/api\/interviews\/(\d+)\/audio/);
     if (audioPathMatch) {
       const interviewId = parseInt(audioPathMatch[1]);
       console.log("[WebSocket] Handling audio WebSocket for interview:", interviewId);
-      
+
       wss.handleUpgrade(request, socket, head, (ws) => {
         setupAudioWebSocket(ws, interviewId);
       });
-    } else {
-      // Reject other upgrade requests
-      console.log("[WebSocket] Rejecting upgrade request for:", pathname);
-      socket.destroy();
     }
+    // If it doesn't match, we do NOTHING. 
+    // This allows other upgrade listeners (like Vite's HMR) to handle the request.
   });
 
   async function setupAudioWebSocket(ws: WebSocket, interviewId: number) {
     console.log(`[WebSocket] Audio WebSocket connected for interview ${interviewId}`);
-    
+
     let audioBuffer: Buffer[] = [];
     let processingInterval: NodeJS.Timeout | null = null;
     let transcript: TranscriptEntry[] = [];
@@ -395,7 +405,7 @@ export async function registerRoutes(
 
     let interview;
     let project;
-    
+
     try {
       interview = await storage.getInterview(interviewId);
       if (!interview) {
@@ -440,7 +450,7 @@ export async function registerRoutes(
       } catch (e) {
         // Not a JSON message, treat as audio
       }
-      
+
       // Treat as audio data (binary)
       audioBuffer.push(data);
     });
@@ -453,11 +463,11 @@ export async function registerRoutes(
 
       try {
         const text = await transcribeAudio(audioData);
-        
+
         if (text.trim()) {
           // Detect speaker using heuristic
           const speaker = detectSpeaker(text, transcript, true);
-          
+
           const entry: TranscriptEntry = {
             id: Math.random().toString(36).substring(2, 15),
             speaker,
@@ -465,9 +475,9 @@ export async function registerRoutes(
             timestamp: Date.now(),
             isFinal: true,
           };
-          
+
           transcript.push(entry);
-          
+
           ws.send(JSON.stringify({
             type: "transcript",
             id: entry.id,
@@ -483,11 +493,11 @@ export async function registerRoutes(
           // If interviewer speaks, mark it as a potential question
           if (speaker === "interviewer") {
             // Try to match to a question from the project
-            const matchingQuestion = questions.find(q => 
+            const matchingQuestion = questions.find(q =>
               entry.text.toLowerCase().includes(q.question.toLowerCase().substring(0, 30)) ||
               q.question.toLowerCase().includes(entry.text.toLowerCase().substring(0, 30))
             );
-            
+
             if (matchingQuestion) {
               currentQuestionId = matchingQuestion.id;
               candidateAnswerStartIndex = transcript.length;
@@ -506,13 +516,13 @@ export async function registerRoutes(
                 .slice(answerStartIndex, -1)
                 .filter(e => e.speaker === "candidate");
               const candidateAnswer = answerEntries.map(e => e.text).join(" ");
-              
+
               if (candidateAnswer.trim().length > 20) {
                 // Only evaluate if answer is substantial
                 lastEvaluationTime = Date.now();
-                
+
                 ws.send(JSON.stringify({ type: "evaluating" }));
-                
+
                 // Evaluate asynchronously to not block transcript processing
                 evaluateAnswerQuality(question, candidateAnswer, transcript.slice(0, -1))
                   .then((evaluation) => {
@@ -521,10 +531,10 @@ export async function registerRoutes(
                       .slice(answerStartIndex, -1)
                       .filter(e => e.speaker === "candidate")
                       .pop();
-                    
+
                     if (lastCandidateEntry) {
                       lastCandidateEntry.evaluation = evaluation;
-                      
+
                       // Update transcript in database
                       storage.updateInterview(interviewId, {
                         transcriptJson: transcript,
@@ -538,7 +548,7 @@ export async function registerRoutes(
                           signals: evaluation.signals,
                           reasoning: evaluation.reasoning,
                         }));
-                        
+
                         console.log(`[WebSocket] Evaluated answer for question ${currentQuestionId}: ${evaluation.quality} (${evaluation.score}/5)`);
                       }).catch(err => console.error("[WebSocket] Error updating transcript:", err));
                     }
@@ -546,14 +556,14 @@ export async function registerRoutes(
                   .catch((error) => {
                     console.error("[WebSocket] Error evaluating answer:", error);
                   });
-                
+
                 // Reset for next question
                 currentQuestionId = null;
                 candidateAnswerStartIndex = null;
               }
             }
           }
-          
+
           // Also evaluate if candidate has been speaking for a while (long answer)
           if (speaker === "candidate" && currentQuestionId && candidateAnswerStartIndex !== null) {
             const answerStartIndex = candidateAnswerStartIndex ?? undefined;
@@ -561,20 +571,20 @@ export async function registerRoutes(
               .slice(answerStartIndex)
               .filter(e => e.speaker === "candidate");
             const candidateAnswer = answerEntries.map(e => e.text).join(" ");
-            
+
             // If answer is very long (500+ chars), evaluate immediately
             if (candidateAnswer.trim().length > 500 && Date.now() - lastEvaluationTime > 5000) {
               const question = questions.find(q => q.id === currentQuestionId);
               if (question) {
                 lastEvaluationTime = Date.now();
-                
+
                 ws.send(JSON.stringify({ type: "evaluating" }));
-                
+
                 evaluateAnswerQuality(question, candidateAnswer, transcript)
                   .then((evaluation) => {
                     if (entry.id) {
                       entry.evaluation = evaluation;
-                      
+
                       storage.updateInterview(interviewId, {
                         transcriptJson: transcript,
                       }).then(() => {
@@ -600,18 +610,18 @@ export async function registerRoutes(
           const now = Date.now();
           if (now - lastSuggestionTime > 30000 && transcript.length >= 3) {
             lastSuggestionTime = now;
-            
+
             ws.send(JSON.stringify({ type: "thinking" }));
-            
+
             const notes = interview.notesJson as InterviewNotes || { questionsAsked: [] };
-            
+
             const suggestions = await generateFollowUpSuggestions(
               transcript,
               project.competencyRubricJson || [],
               project.screeningQuestionsJson || [],
               notes.questionsAsked || []
             );
-            
+
             if (suggestions.length > 0) {
               ws.send(JSON.stringify({
                 type: "suggestion",
@@ -629,7 +639,7 @@ export async function registerRoutes(
 
     ws.on("close", async () => {
       console.log(`Audio WebSocket closed for interview ${interviewId}`);
-      
+
       if (processingInterval) {
         clearInterval(processingInterval);
       }

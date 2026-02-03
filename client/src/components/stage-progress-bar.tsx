@@ -1,4 +1,10 @@
 import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { FileText, Edit, Rocket, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +40,8 @@ interface StageProgressBarProps {
   clickableStages?: CurrentStage[];
   /** Optional count to display (e.g. number of questions) in stage 2 */
   questionCount?: number;
+  /** Tooltip text when a stage is not clickable (e.g. { 2: "Generate Questions first" }) */
+  disabledStageTooltips?: Partial<Record<CurrentStage, string>>;
 }
 
 /**
@@ -42,7 +50,7 @@ interface StageProgressBarProps {
  * 2. Refine & review → Approve questions
  * 3. Ready for interview
  */
-export function StageProgressBar({ currentStage, className, onStageClick, clickableStages, questionCount }: StageProgressBarProps) {
+export function StageProgressBar({ currentStage, className, onStageClick, clickableStages, questionCount, disabledStageTooltips }: StageProgressBarProps) {
   const progressPercent = (currentStage / 3) * 100;
 
   return (
@@ -57,13 +65,14 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
       </div>
 
       {/* Stage pills — compact */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        {STAGES.map(({ stage, label, sublabel, icon: Icon }, i) => {
-          const isComplete = currentStage > stage;
-          const isCurrent = currentStage === stage;
-          const isClickable = onStageClick && (!clickableStages || clickableStages.includes(stage));
-          return (
-            <div key={stage} className="flex items-center flex-1 min-w-0">
+      <TooltipProvider>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {STAGES.map(({ stage, label, sublabel, icon: Icon }, i) => {
+            const isComplete = currentStage > stage;
+            const isCurrent = currentStage === stage;
+            const isClickable = onStageClick && (!clickableStages || clickableStages.includes(stage));
+            const disabledTooltip = !isClickable && disabledStageTooltips?.[stage];
+            const pill = (
               <div
                 role={isClickable ? "button" : undefined}
                 tabIndex={isClickable ? 0 : undefined}
@@ -114,13 +123,29 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
                   </p>
                 </div>
               </div>
-              {i < STAGES.length - 1 && (
-                <div className="hidden sm:block w-2 h-px bg-border shrink-0 mx-0.5" aria-hidden />
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+            return (
+              <div key={stage} className="flex items-center flex-1 min-w-0">
+                {disabledTooltip ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex flex-1 min-w-0">{pill}</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="font-medium">
+                      {disabledTooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  pill
+                )}
+                {i < STAGES.length - 1 && (
+                  <div className="hidden sm:block w-2 h-px bg-border shrink-0 mx-0.5" aria-hidden />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </TooltipProvider>
     </div>
   );
 }

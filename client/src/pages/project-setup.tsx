@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Header } from "@/components/header";
+import { GeneratingQuestionsProgress } from "@/components/generating-questions-progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,8 +23,9 @@ import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, CheckCircle, Settings, User, Globe, Clock, Info, Edit } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, Settings, User, Globe, Clock, Info, Edit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { LocationCombobox, type LocationValue } from "@/components/location-combobox";
 
 export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,14 +40,38 @@ export default function ProjectSetupPage() {
   const [jdText, setJdText] = useState("");
   const [smeNotes, setSmeNotes] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
+  const [location, setLocation] = useState<LocationValue | null>(null);
   const [interviewDuration, setInterviewDuration] = useState<number | "">("");
   const [totalMinutes, setTotalMinutes] = useState<number | "">("");
   const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
 
   const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
+  const projectRecord = project as Record<string, unknown> | undefined;
+  const normalizedProjectInterviewMinutes = (() => {
+    const raw = projectRecord?.interviewDuration ?? projectRecord?.interview_duration;
+    const num = raw != null && raw !== "" ? Number(raw) : NaN;
+    return !Number.isNaN(num) && num > 0 ? num : "";
+  })();
+  const normalizedProjectTotalMinutes = (() => {
+    const raw = projectRecord?.totalMinutes ?? projectRecord?.total_minutes;
+    const num = raw != null && raw !== "" ? Number(raw) : NaN;
+    return !Number.isNaN(num) && num >= 0 ? num : "";
+  })();
+  const projectCity = (projectRecord?.locationCity as string) || "";
+  const projectState = (projectRecord?.locationState as string) || "";
+  const projectCountry = (projectRecord?.locationCountry as string) || "";
+  const locationChanged =
+    (location?.city ?? "") !== projectCity ||
+    (location?.state ?? "") !== projectState ||
+    (location?.country ?? "") !== projectCountry;
   const hasEdits =
-    jdText !== (project?.jdText || "") || smeNotes !== (project?.smeNotesText || "");
+    jdText !== (project?.jdText || "") ||
+    smeNotes !== (project?.smeNotesText || "") ||
+    companyWebsite !== ((projectRecord?.companyWebsite as string) || "") ||
+    locationChanged ||
+    interviewDuration !== normalizedProjectInterviewMinutes ||
+    totalMinutes !== normalizedProjectTotalMinutes;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -62,6 +87,14 @@ export default function ProjectSetupPage() {
       setJdText(project.jdText || "");
       setSmeNotes(project.smeNotesText || "");
       setCompanyWebsite((p.companyWebsite as string) || "");
+      const locCity = (p.locationCity as string) || (p.location_city as string) || "";
+      const locState = (p.locationState as string) || (p.location_state as string) || "";
+      const locCountry = (p.locationCountry as string) || (p.location_country as string) || "";
+      setLocation(
+        locCity || locState || locCountry
+          ? { city: locCity, state: locState, country: locCountry }
+          : null
+      );
       // Support both camelCase and snake_case from API; no default — leave empty for new projects
       const screeningMins = p.interviewDuration ?? p.interview_duration;
       const screeningNum = screeningMins != null && screeningMins !== "" ? Number(screeningMins) : NaN;
@@ -118,15 +151,28 @@ export default function ProjectSetupPage() {
     },
   });
 
+  const isScreeningExceedsInterview =
+    typeof totalMinutes === "number" &&
+    typeof interviewDuration === "number" &&
+    interviewDuration > totalMinutes;
+
+  const handleNextToJobDescription = () => {
+    if (isScreeningExceedsInterview) {
+      toast({
+        title: "Invalid duration",
+        description: "Only move forward if screening time is less than or equal to interview time.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSetupStep(2);
+  };
+
   const handleSave = () => {
-    if (
-      typeof totalMinutes === "number" &&
-      typeof interviewDuration === "number" &&
-      totalMinutes <= interviewDuration
-    ) {
+    if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid Duration",
-        description: "Total Interview Time must be greater than Total Screening Time.",
+        description: "Only move forward if screening time is less than or equal to interview time.",
         variant: "destructive",
       });
       return;
@@ -137,6 +183,9 @@ export default function ProjectSetupPage() {
       jdText,
       smeNotesText: smeNotes,
       companyWebsite: companyWebsite || undefined,
+      locationCity: location?.city || undefined,
+      locationState: location?.state || undefined,
+      locationCountry: location?.country || undefined,
       interviewDuration: interviewDuration || undefined,
       totalMinutes: totalMinutes || undefined,
     } as any);
@@ -148,14 +197,10 @@ export default function ProjectSetupPage() {
       return;
     }
 
-    if (
-      typeof totalMinutes === "number" &&
-      typeof interviewDuration === "number" &&
-      totalMinutes <= interviewDuration
-    ) {
+    if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid Duration",
-        description: "Total Interview Time must be greater than Total Screening Time.",
+        description: "Only move forward if screening time is less than or equal to interview time.",
         variant: "destructive",
       });
       return;
@@ -167,6 +212,9 @@ export default function ProjectSetupPage() {
         jdText,
         smeNotesText: smeNotes,
         companyWebsite: companyWebsite || undefined,
+        locationCity: location?.city || undefined,
+        locationState: location?.state || undefined,
+        locationCountry: location?.country || undefined,
         interviewDuration: interviewDuration || undefined,
         totalMinutes: totalMinutes || undefined,
       } as any);
@@ -225,9 +273,16 @@ export default function ProjectSetupPage() {
             </Button>
           </div>
 
-          {/* Three-stage progress: Stage 1 = JD & SME Notes → Create questions */}
+          {/* Three-stage progress: Stage 1 = JD & SME Notes → Create questions; Stage 2 = Refine & Review (clickable when questions exist) */}
           <div className="mb-6 max-w-4xl mx-auto">
-            <StageProgressBar currentStage={1} />
+            <StageProgressBar
+              currentStage={1}
+              onStageClick={(stage) => {
+                if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions`);
+              }}
+              clickableStages={hasExistingQuestions ? [2] : []}
+              disabledStageTooltips={hasExistingQuestions ? undefined : { 2: "Generate Questions first" }}
+            />
           </div>
 
           <div className="flex items-center justify-center mb-4">
@@ -267,34 +322,9 @@ export default function ProjectSetupPage() {
             </div>
           </div>
 
-          {/* Skeleton loader while questions are being generated (after confirm) */}
+          {/* Progress card while questions are being generated (after confirm) */}
           {generateQuestions.isPending && (
-            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
-              <CardHeader className="p-10 pb-6">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                  </div>
-                  <div className="space-y-2">
-                    <CardTitle className="text-xl font-black tracking-tight">Generating questions</CardTitle>
-                    <CardDescription className="text-sm">
-                      AI is creating screening questions and grading rubrics. This may take a moment…
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-10 pt-0 space-y-4">
-                <Skeleton className="h-4 w-full rounded-lg" />
-                <Skeleton className="h-4 w-5/6 rounded-lg" />
-                <Skeleton className="h-4 w-4/5 rounded-lg" />
-                <div className="pt-6 space-y-3">
-                  <Skeleton className="h-12 w-full rounded-xl" />
-                  <Skeleton className="h-12 w-full rounded-xl" />
-                  <Skeleton className="h-12 w-full rounded-xl" />
-                  <Skeleton className="h-12 w-3/4 rounded-xl" />
-                </div>
-              </CardContent>
-            </Card>
+            <GeneratingQuestionsProgress />
           )}
 
           {!generateQuestions.isPending && setupStep === 1 && (
@@ -365,8 +395,14 @@ export default function ProjectSetupPage() {
                           setInterviewDuration(parseInt(val) || 0);
                         }}
                         placeholder="Minutes"
-                        className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                        className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${isScreeningExceedsInterview ? "border-destructive ring-1 ring-destructive/30" : ""}`}
                       />
+                      {isScreeningExceedsInterview && (
+                        <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                          <Info className="w-3.5 h-3.5" />
+                          Only move forward if screening time is less than or equal to interview time.
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -384,21 +420,23 @@ export default function ProjectSetupPage() {
                       className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
                     />
                   </div>
+
+                  <div className="space-y-3">
+                    <Label htmlFor="location" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">
+                      Location
+                    </Label>
+                    <LocationCombobox
+                      id="location"
+                      value={location}
+                      onChange={setLocation}
+                      placeholder="City, State, Country (Australia & NZ)"
+                      data-testid="input-location"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-6">
-                  {hasExistingQuestions && (
-                    <Button
-                      variant="outline"
-                      onClick={() => navigate(`/projects/${id}/questions`)}
-                      className="rounded-xl px-6 font-bold h-12 gap-2 border-primary/30 hover:bg-primary/5 w-full sm:w-auto"
-                      data-testid="button-skip-to-questions-step1"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      Continue to Questions
-                    </Button>
-                  )}
-                  <Button onClick={() => setSetupStep(2)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto">
+                  <Button onClick={handleNextToJobDescription} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto" data-testid="button-next-job-description">
                     Next: Job Description
                     <ChevronRight className="w-4 h-4" />
                   </Button>
@@ -449,17 +487,6 @@ export default function ProjectSetupPage() {
                     Back
                   </Button>
                   <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
-                    {hasExistingQuestions && (
-                      <Button
-                        variant="outline"
-                        onClick={() => navigate(`/projects/${id}/questions`)}
-                        className="rounded-xl px-6 font-bold h-12 gap-2 border-primary/30 hover:bg-primary/5"
-                        data-testid="button-skip-to-questions"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        Continue to Questions
-                      </Button>
-                    )}
                     <Button onClick={() => setSetupStep(3)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12" disabled={!jdText.trim()}>
                       Next: SME Notes
                       <ChevronRight className="w-4 h-4" />
@@ -515,26 +542,15 @@ export default function ProjectSetupPage() {
                   </Button>
 
                   {hasExistingQuestions && !hasEdits ? (
-                    <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-                      <Button
-                        variant="outline"
-                        onClick={() => navigate(`/projects/${id}/questions`)}
-                        className="rounded-xl px-6 font-bold h-12 gap-2 border-primary/30 hover:bg-primary/5"
-                        data-testid="button-skip-to-questions-step3"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        Continue to Questions
-                      </Button>
-                      <Button
-                        onClick={() => setSetupStep(2)}
-                        className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                        data-testid="button-edit-jd-sme"
-                      >
-                        <Edit className="w-4 h-4" />
-                        Edit JD & SME Notes
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={() => setSetupStep(2)}
+                      className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                      data-testid="button-edit-jd-sme"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Edit JD & SME Notes
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
                   ) : (
                     <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
                       <Button
@@ -562,7 +578,7 @@ export default function ProjectSetupPage() {
                             {hasExistingQuestions ? "Regenerate Questions?" : "Generate Questions?"}
                           </AlertDialogTitle>
                           <AlertDialogDescription className="text-base font-medium">
-                            Candiq AI (Gemini 2.5 Pro) will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers).
+                            Candiq AI will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers).
                             {hasExistingQuestions && " This will replace your existing questions."}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
