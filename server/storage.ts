@@ -7,6 +7,12 @@ import type {
   InsertInterview,
 } from "@shared/schema";
 
+/** Map Prisma project (aiChatHistory) to Project type (aiChatHistoryJson). */
+function toProject(row: { aiChatHistory?: unknown; [key: string]: unknown }): Project {
+  const { aiChatHistory, ...rest } = row;
+  return { ...rest, aiChatHistoryJson: aiChatHistory ?? null } as Project;
+}
+
 export interface IStorage {
   getProjectsByUser(userId: string): Promise<Project[]>;
   getProject(id: number): Promise<Project | undefined>;
@@ -27,21 +33,21 @@ export class DatabaseStorage implements IStorage {
       where: { userId },
       orderBy: { createdAt: "desc" },
     });
-    return projects as Project[];
+    return projects.map(toProject);
   }
 
   async getProject(id: number): Promise<Project | undefined> {
     const project = await db.project.findUnique({
       where: { id },
     });
-    return project as Project | undefined;
+    return project ? toProject(project) : undefined;
   }
 
   async createProject(project: InsertProject): Promise<Project> {
     const created = await db.project.create({
       data: project as Prisma.ProjectCreateInput,
     });
-    return created as Project;
+    return toProject(created);
   }
 
   private static readonly PROJECT_UPDATE_KEYS = [
@@ -84,7 +90,7 @@ export class DatabaseStorage implements IStorage {
       where: { id },
       data: updateData as Prisma.ProjectUpdateInput,
     });
-    return updated as Project | undefined;
+    return toProject(updated);
   }
 
   async deleteProject(id: number): Promise<void> {
