@@ -96,7 +96,7 @@ function isRetryableGeminiError(error: any) {
 }
 
 function getGeminiModelCandidates() {
-  const preferred = process.env.GEMINI_MODEL || "gemini-2.5-pro";
+  const preferred = process.env.GEMINI_MODEL || "gemini-2.0-flash";
   // Fallbacks in case the preferred model is temporarily unavailable.
   // (If a model doesn't exist for the user's account, the request will error and we'll try the next.)
   const fallbacks = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
@@ -381,12 +381,12 @@ Only output a JSON array. No markdown.`;
           console.warn("[gemini] Additional questions response was not an array. Skipping.");
         } else {
           const addedQuestions = addedQuestionsRaw.map((q: any, idx: number) => ({
-          id: q.id || `q_${generateId()}`,
-          competencyId: q.competencyId,
-          question: q.question,
-          rubric: q.rubric,
-          isMandatory: q.isMandatory ?? true,
-          order: questions.length + idx + 1,
+            id: q.id || `q_${generateId()}`,
+            competencyId: q.competencyId,
+            question: q.question,
+            rubric: q.rubric,
+            isMandatory: q.isMandatory ?? true,
+            order: questions.length + idx + 1,
           })) as ScreeningQuestion[];
 
           const merged = normalizeQuestions(competencies, [...questions, ...addedQuestions], targetQuestionCount);
@@ -525,7 +525,7 @@ Only output valid JSON object. No markdown code blocks.`;
       throw new Error("GOOGLE_AI_API_KEY is not set.");
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
@@ -582,7 +582,7 @@ Respond with ONLY the JSON object. No markdown code blocks.`;
       throw new Error("GOOGLE_AI_API_KEY is not set.");
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
@@ -664,7 +664,7 @@ Only output valid JSON array. No markdown code blocks.`;
       return [];
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
@@ -742,7 +742,7 @@ Only output valid JSON. No markdown code blocks.`;
       };
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();

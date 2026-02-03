@@ -91,7 +91,7 @@ export default function ProjectSetupPage() {
         method: "POST",
         credentials: "include",
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: response.statusText }));
         const error = new Error(errorData.error || errorData.details || response.statusText);
@@ -99,7 +99,7 @@ export default function ProjectSetupPage() {
         (error as any).data = errorData;
         throw error;
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -110,18 +110,31 @@ export default function ProjectSetupPage() {
     onError: (error: any) => {
       const errorMessage = error?.data?.error || error?.message || "Failed to generate questions.";
       const errorDetails = error?.data?.details || "";
-      toast({ 
-        title: "Error", 
-        description: errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage, 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: errorDetails ? `${errorMessage}: ${errorDetails}` : errorMessage,
+        variant: "destructive"
       });
     },
   });
 
   const handleSave = () => {
-    updateProject.mutate({ 
-      title, 
-      jdText, 
+    if (
+      typeof totalMinutes === "number" &&
+      typeof interviewDuration === "number" &&
+      totalMinutes <= interviewDuration
+    ) {
+      toast({
+        title: "Invalid Duration",
+        description: "Total Interview Time must be greater than Total Screening Time.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateProject.mutate({
+      title,
+      jdText,
       smeNotesText: smeNotes,
       companyWebsite: companyWebsite || undefined,
       interviewDuration: interviewDuration || undefined,
@@ -134,24 +147,37 @@ export default function ProjectSetupPage() {
       toast({ title: "Job description required", description: "Please add a job description first.", variant: "destructive" });
       return;
     }
-    
+
+    if (
+      typeof totalMinutes === "number" &&
+      typeof interviewDuration === "number" &&
+      totalMinutes <= interviewDuration
+    ) {
+      toast({
+        title: "Invalid Duration",
+        description: "Total Interview Time must be greater than Total Screening Time.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      await updateProject.mutateAsync({ 
-        title, 
-        jdText, 
+      await updateProject.mutateAsync({
+        title,
+        jdText,
         smeNotesText: smeNotes,
         companyWebsite: companyWebsite || undefined,
         interviewDuration: interviewDuration || undefined,
         totalMinutes: totalMinutes || undefined,
       } as any);
-      
+
       await new Promise(resolve => setTimeout(resolve, 100));
       generateQuestions.mutate();
     } catch (error: any) {
-      toast({ 
-        title: "Save failed", 
-        description: error?.message || "Failed to save project before generating questions.", 
-        variant: "destructive" 
+      toast({
+        title: "Save failed",
+        description: error?.message || "Failed to save project before generating questions.",
+        variant: "destructive"
       });
     }
   };
@@ -219,15 +245,13 @@ export default function ProjectSetupPage() {
                   <button
                     type="button"
                     onClick={() => setSetupStep(step)}
-                    className={`flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-bold transition-all w-full justify-center ${
-                      setupStep === step
-                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 ring-1 ring-primary/20"
-                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-                    }`}
+                    className={`flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-bold transition-all w-full justify-center ${setupStep === step
+                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 ring-1 ring-primary/20"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                      }`}
                   >
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-xs font-black ${
-                      setupStep === step ? "bg-primary-foreground/20 text-white" : "bg-muted text-muted-foreground"
-                    }`}>
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-xs font-black ${setupStep === step ? "bg-primary-foreground/20 text-white" : "bg-muted text-muted-foreground"
+                      }`}>
                       {step}
                     </div>
                     <Icon className="w-4 h-4 shrink-0" />
@@ -299,7 +323,7 @@ export default function ProjectSetupPage() {
                       data-testid="input-project-title"
                     />
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-3">
                       <Label htmlFor="total-minutes" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
@@ -418,7 +442,7 @@ export default function ProjectSetupPage() {
                     </div>
                   )}
                 </div>
-                
+
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6">
                   <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
                     <ChevronLeft className="w-4 h-4" />
@@ -538,13 +562,13 @@ export default function ProjectSetupPage() {
                             {hasExistingQuestions ? "Regenerate Questions?" : "Generate Questions?"}
                           </AlertDialogTitle>
                           <AlertDialogDescription className="text-base font-medium">
-                            Candiq AI (Gemini 2.5 Pro) will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers). 
+                            Candiq AI (Gemini 2.5 Pro) will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers).
                             {hasExistingQuestions && " This will replace your existing questions."}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter className="gap-3">
                           <AlertDialogCancel className="rounded-xl font-bold">Review Details</AlertDialogCancel>
-                          <AlertDialogAction 
+                          <AlertDialogAction
                             onClick={handleGenerate}
                             className="rounded-xl font-bold bg-primary hover:bg-primary/90"
                           >

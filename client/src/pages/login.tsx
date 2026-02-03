@@ -21,7 +21,9 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
-  Globe
+  Globe,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -42,6 +44,8 @@ export default function LoginPage() {
   const [signupPassword, setSignupPassword] = useState("");
   const [signupFirstName, setSignupFirstName] = useState("");
   const [signupLastName, setSignupLastName] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
 
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
@@ -237,14 +241,23 @@ export default function LoginPage() {
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
                         <Input
                           id="login-password"
-                          type="password"
+                          type={showLoginPassword ? "text" : "password"}
                           placeholder="••••••••"
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
                           required
                           disabled={loginMutation.isPending}
-                          className="h-14 pl-12 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium"
+                          className="h-14 pl-12 pr-12 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium"
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 transition-colors"
+                          tabIndex={-1}
+                          aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                        >
+                          {showLoginPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                        </button>
                       </div>
                     </div>
                     <Button
@@ -285,17 +298,28 @@ export default function LoginPage() {
                     </div>
                     <div className="space-y-3">
                       <Label htmlFor="signup-password" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Password</Label>
-                      <Input
-                        id="signup-password"
-                        type="password"
-                        placeholder="Min. 8 characters"
-                        value={signupPassword}
-                        onChange={(e) => setSignupPassword(e.target.value)}
-                        required
-                        minLength={8}
-                        disabled={signupMutation.isPending}
-                        className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
-                      />
+                      <div className="relative group">
+                        <Input
+                          id="signup-password"
+                          type={showSignupPassword ? "text" : "password"}
+                          placeholder="Min. 8 characters"
+                          value={signupPassword}
+                          onChange={(e) => setSignupPassword(e.target.value)}
+                          required
+                          minLength={8}
+                          disabled={signupMutation.isPending}
+                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium pl-5 pr-12"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSignupPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 transition-colors"
+                          tabIndex={-1}
+                          aria-label={showSignupPassword ? "Hide password" : "Show password"}
+                        >
+                          {showSignupPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                        </button>
+                      </div>
                       <div className="flex items-center gap-2 px-1">
                         {passwordStrength ? (
                           <div className="flex items-center gap-1.5 text-green-600">
