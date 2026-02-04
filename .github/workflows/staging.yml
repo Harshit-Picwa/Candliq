@@ -21,8 +21,19 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Install Dependencies (retry)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: npm ci
+        env:
+          # Harden npm downloads against transient network resets (eg Prisma engines)
+          npm_config_fetch_retries: "5"
+          npm_config_fetch_retry_factor: "2"
+          npm_config_fetch_retry_mintimeout: "20000"
+          npm_config_fetch_retry_maxtimeout: "120000"
+          npm_config_fetch_timeout: "120000"
 
       - name: Type Check
         run: npm run check
