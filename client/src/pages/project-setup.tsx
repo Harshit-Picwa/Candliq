@@ -56,6 +56,7 @@ export default function ProjectSetupPage() {
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [triedToAdvance, setTriedToAdvance] = useState(false);
   const initialStepSet = useRef(false);
+  const stageSaved = useRef(false);
 
   const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
   const projectRecord = project as Record<string, unknown> | undefined;
@@ -124,6 +125,14 @@ export default function ProjectSetupPage() {
       }
     }
   }, [project]);
+
+  // Persist current stage when visiting this page (even if user doesn't change steps)
+  useEffect(() => {
+    if (project && !stageSaved.current) {
+      apiRequest("PATCH", `/api/projects/${id}`, { currentStage: 1 });
+      stageSaved.current = true;
+    }
+  }, [project, id]);
   
   // Save setup step to server
   const saveSetupStep = useMutation({

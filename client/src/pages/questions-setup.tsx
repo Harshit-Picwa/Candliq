@@ -113,6 +113,7 @@ export default function QuestionsSetupPage() {
   const [isRefiningSelected, setIsRefiningSelected] = useState(false);
 
   const initialStepSet = useRef(false);
+  const stageSaved = useRef(false);
   
   useEffect(() => {
     if (project) {
@@ -140,6 +141,14 @@ export default function QuestionsSetupPage() {
       }
     }
   }, [project]);
+
+  // Persist current stage when visiting this page (even if user doesn't change subtabs)
+  useEffect(() => {
+    if (project && !stageSaved.current) {
+      apiRequest("PATCH", `/api/projects/${id}`, { currentStage: 2 });
+      stageSaved.current = true;
+    }
+  }, [project, id]);
   
   // Save step to server when it changes
   const saveStep = useMutation({
