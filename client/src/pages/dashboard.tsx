@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2, Loader2, ChevronRight, User } from "lucide-react";
+import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2, Loader2, ChevronRight, User, MapPin } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +30,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+
+function ProjectCardSkeleton() {
+  return (
+    <div className="rounded-[2rem] border border-border/40 bg-card overflow-hidden shadow-sm">
+      <div className="p-8 pb-4">
+        <Skeleton className="h-6 w-3/4 rounded-lg" />
+        <Skeleton className="mt-3 h-3 w-28 rounded-md" />
+      </div>
+      <div className="p-8 pt-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Skeleton className="h-8 w-20 rounded-xl" />
+          <Skeleton className="h-8 w-24 rounded-xl" />
+        </div>
+        <div className="mt-8 flex items-center justify-between">
+          <div className="flex -space-x-2">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-7 w-7 rounded-full border-2 border-card" />
+            ))}
+          </div>
+          <Skeleton className="h-8 w-8 rounded-full" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
@@ -59,6 +84,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState<number | null>(null);
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -89,6 +115,9 @@ export default function DashboardPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete project.", variant: "destructive" });
+    },
+    onSettled: () => {
+      setDeletingProjectId(null);
     },
   });
 
@@ -164,22 +193,30 @@ export default function DashboardPage() {
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="space-y-4">
-                  <Skeleton className="h-48 w-full rounded-[2rem]" />
-                </div>
+                <ProjectCardSkeleton key={i} />
               ))}
             </div>
           ) : projects && projects.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {projects.map((project) => (
-                <Card 
-                  key={project.id} 
-                  className="group relative rounded-[2rem] border-border/40 bg-card hover:bg-background shadow-sm hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 overflow-hidden cursor-pointer" 
+              {createProject.isPending && (
+                <div aria-hidden>
+                  <ProjectCardSkeleton />
+                </div>
+              )}
+              {projects.map((project) =>
+                deletingProjectId === project.id ? (
+                  <div key={project.id} aria-busy aria-label="Deleting project">
+                    <ProjectCardSkeleton />
+                  </div>
+                ) : (
+                <Card
+                  key={project.id}
+                  className="group relative rounded-[2rem] border-border/40 bg-card hover:bg-background shadow-sm hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 overflow-hidden cursor-pointer"
                   data-testid={`card-project-${project.id}`}
                 >
-                  <Link 
-                    href={(project.screeningQuestionsJson?.length || 0) > 0 ? `/projects/${project.id}/questions` : `/projects/${project.id}`} 
-                    className="absolute inset-0 z-10" 
+                  <Link
+                    href={(project.screeningQuestionsJson?.length || 0) > 0 ? `/projects/${project.id}/questions` : `/projects/${project.id}`}
+                    className="absolute inset-0 z-10"
                   />
                   <div className="absolute top-6 right-6 z-20" onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu modal={false}>
@@ -194,6 +231,7 @@ export default function DashboardPage() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            setDeletingProjectId(project.id);
                             deleteProject.mutate(project.id);
                           }}
                           data-testid={`button-delete-project-${project.id}`}
@@ -209,9 +247,19 @@ export default function DashboardPage() {
                       <CardTitle className="text-xl font-black tracking-tight text-foreground/90 leading-tight group-hover:text-primary transition-colors">
                         {project.title}
                       </CardTitle>
-                      <CardDescription className="mt-2 flex items-center gap-2 font-bold text-[10px] uppercase tracking-[0.15em] text-muted-foreground/60">
-                        <Briefcase className="w-3 h-3" />
-                        Created {format(new Date(project.createdAt), "MMM d")}
+                      <CardDescription className="mt-2 flex flex-col gap-1.5 font-bold text-[10px] uppercase tracking-[0.15em] text-muted-foreground/60">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-3 h-3" />
+                          Created {format(new Date(project.createdAt), "MMM d")}
+                        </div>
+                        {(project.locationCity || project.locationState || project.locationCountry) && (
+                          <div className="flex items-center gap-2 text-primary/70">
+                            <MapPin className="w-3 h-3" />
+                            <span className="truncate">
+                              {[project.locationCity, project.locationState, project.locationCountry].filter(Boolean).join(", ")}
+                            </span>
+                          </div>
+                        )}
                       </CardDescription>
                     </div>
                   </CardHeader>
@@ -234,7 +282,7 @@ export default function DashboardPage() {
                         </div>
                       </Link>
                     </div>
-                    
+
                     <div className="mt-8 flex items-center justify-between relative z-30">
                       <Link href={`/projects/${project.id}/interviews`} className="flex -space-x-2 hover:scale-105 transition-transform">
                         {[1, 2, 3].map((i) => (
@@ -249,7 +297,12 @@ export default function DashboardPage() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                )
+              )}
+            </div>
+          ) : createProject.isPending ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <ProjectCardSkeleton />
             </div>
           ) : (
             <Card className="rounded-[3rem] border-dashed border-2 border-border/60 bg-card/30 backdrop-blur-sm p-24 shadow-inner shadow-black/5">

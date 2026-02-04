@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
-import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, User, Settings, Brain, X } from "lucide-react";
+import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, Settings, Brain, X, MapPin, Calendar } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -267,6 +268,15 @@ export default function QuestionsSetupPage() {
     questions: questions.filter(q => q.competencyId === comp.id).sort((a, b) => a.order - b.order),
   }));
 
+  const groupedIncluded = groupedQuestions
+    .map(g => ({ ...g, questions: g.questions.filter(q => q.isMandatory) }))
+    .filter(g => g.questions.length > 0);
+  const groupedNotIncluded = groupedQuestions
+    .map(g => ({ ...g, questions: g.questions.filter(q => !q.isMandatory) }))
+    .filter(g => g.questions.length > 0);
+  const includedCount = questions.filter(q => q.isMandatory).length;
+  const notIncludedCount = questions.filter(q => !q.isMandatory).length;
+
   const questionCount = questions.length;
 
   const validateAllQuestions = (): boolean => {
@@ -338,32 +348,42 @@ export default function QuestionsSetupPage() {
               </Link>
             </Button>
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold py-0 h-5 px-2 rounded-md bg-background/50 border-primary/20 text-primary/80">
-                  Project Questions
-                </Badge>
-              </div>
               <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{project?.title}</h1>
-              <div className="flex items-center gap-3 mt-1.5">
-                <div className="flex -space-x-2">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-6 w-6 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground overflow-hidden">
-                      <User className="h-3 w-3" />
-                    </div>
-                  ))}
+              <div className="flex items-center gap-4 mt-1.5 min-h-[24px]">
+                <div className="flex items-center gap-3 text-muted-foreground text-sm font-medium">
+                  <p className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
+                    {questionCount} question{questionCount !== 1 ? "s" : ""} generated
+                  </p>
+                  {approved && (
+                    <Badge className="gap-1 bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20 rounded-full py-0 h-6">
+                      <CheckCircle className="w-3 h-3" />
+                      Finalized
+                    </Badge>
+                  )}
                 </div>
-                <p className="text-muted-foreground text-sm font-medium">
-                  {questionCount} question{questionCount !== 1 ? "s" : ""} generated
-                </p>
-                {approved && (
-                  <Badge className="gap-1 bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20 rounded-full py-0 h-6">
-                    <CheckCircle className="w-3 h-3" />
-                    Finalized
-                  </Badge>
+
+                {project && (
+                  <div className="flex items-center gap-3 text-muted-foreground text-[11px] font-bold uppercase tracking-wider">
+                    <div className="h-3.5 w-[1px] bg-border/60 mx-1" />
+                    {(project.locationCity || project.locationState || project.locationCountry) && (
+                      <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-0.5 rounded-lg border border-border/30">
+                        <MapPin className="w-3 h-3 text-primary/60" />
+                        <span className="truncate max-w-[200px]">
+                          {[project.locationCity, project.locationState, project.locationCountry].filter(Boolean).join(", ")}
+                        </span>
+                      </div>
+                    )}
+                    {project.createdAt && (
+                      <div className="flex items-center gap-1.5 bg-muted/30 px-2 py-0.5 rounded-lg border border-border/30">
+                        <Calendar className="w-3 h-3 text-primary/60" />
+                        <span>{format(new Date(project.createdAt), "MMM d, yyyy")}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
-
             <div className="flex items-center gap-2">
               {step === "edit" ? (
                 <>
@@ -504,105 +524,150 @@ export default function QuestionsSetupPage() {
               </div>
             </Card>
           ) : step === "review" ? (
-            <div className="grid gap-10 pb-20 max-w-4xl mx-auto">
-              {groupedQuestions.map(({ competency, questions: compQuestions }, idx) => {
-                const selectedCompQuestions = compQuestions.filter(q => q.isMandatory);
-                if (selectedCompQuestions.length === 0) return null;
-
-                return (
-                  <div key={competency.id} className="space-y-6">
-                    <div className="flex items-center gap-3 px-2">
-                      <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xs">
-                        {idx + 1}
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-black tracking-tight text-foreground/90 leading-none mb-1">{competency.name}</h3>
-                        <p className="text-xs text-muted-foreground font-medium">{competency.description}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4">
-                      {selectedCompQuestions.map((q) => (
-                        <Card key={q.id} className="rounded-2xl border-border/40 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group">
-                          <CardContent className="p-0">
-                            <div className="p-6 bg-card border-b border-border/30">
-                              <p className="font-bold text-base text-foreground/90 leading-relaxed">{q.question}</p>
-                            </div>
-                            <div className="p-6 bg-muted/20 space-y-6">
-                              <div className="space-y-3">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
-                                  <Brain className="w-3.5 h-3.5" /> Core Reasoning
-                                </h4>
-                                <p className="text-sm font-medium text-foreground/70 leading-relaxed pl-5">
-                                  {q.rubric.typicalReasoning || "No reasoning criteria provided."}
-                                </p>
-                              </div>
-
-                              <div className="grid sm:grid-cols-3 gap-6">
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 text-green-600">
-                                    <CheckCircle className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Good Answer</span>
-                                  </div>
-                                  <ul className="space-y-2 pl-1">
-                                    {q.rubric.goodSignals?.map((s, i) => (
-                                      <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
-                                        <div className="h-1 w-1 rounded-full bg-green-500 mt-1.5 shrink-0" />
-                                        {s}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 text-blue-600">
-                                    <MessageSquare className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Moderate</span>
-                                  </div>
-                                  <ul className="space-y-2 pl-1">
-                                    {q.rubric.moderateSignals?.map((s, i) => (
-                                      <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
-                                        <div className="h-1 w-1 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                                        {s}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 text-amber-600">
-                                    <AlertCircle className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">Bad Answer</span>
-                                  </div>
-                                  <ul className="space-y-2 pl-1">
-                                    {q.rubric.poorSignals?.map((s, i) => (
-                                      <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
-                                        <div className="h-1 w-1 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                                        {s}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
+            <div className="grid gap-12 pb-20 max-w-4xl mx-auto">
+              {[
+                { sectionTitle: "Included in interview", sectionSubtitle: `${includedCount} question(s)`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
+                { sectionTitle: "Not included", sectionSubtitle: `${notIncludedCount} question(s)`, grouped: groupedNotIncluded, icon: AlertCircle, iconClass: "text-muted-foreground" },
+              ].map(({ sectionTitle, sectionSubtitle, grouped, icon: SectionIcon, iconClass }) => (
+                <div key={sectionTitle} className="space-y-6">
+                  <div className="flex items-center gap-3 px-2">
+                    <SectionIcon className={`w-5 h-5 shrink-0 ${iconClass}`} />
+                    <h2 className="text-base font-black uppercase tracking-wider text-foreground/80">{sectionTitle}</h2>
+                    <Badge variant="secondary" className="rounded-full text-[10px] font-bold px-2.5 py-0">
+                      {sectionSubtitle}
+                    </Badge>
+                    <div className="flex-1 h-[1px] bg-gradient-to-r from-border/80 to-transparent" />
                   </div>
-                );
-              })}
+
+                  {grouped.map(({ competency, questions: compQuestions }, idx) => (
+                    <div key={competency.id} className="space-y-4">
+                      <div className="flex items-center gap-3 px-2">
+                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-black text-xs">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black tracking-tight text-foreground/90 leading-none mb-1">{competency.name}</h3>
+                          <p className="text-xs text-muted-foreground font-medium">{competency.description}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4">
+                        {compQuestions.map((q) => (
+                          <Card key={q.id} className="rounded-2xl border-border/40 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group">
+                            <CardContent className="p-0">
+                              <div className="p-6 bg-card border-b border-border/30">
+                                <p className="font-bold text-base text-foreground/90 leading-relaxed">{q.question}</p>
+                              </div>
+                              <div className="p-6 bg-muted/20 space-y-6">
+                                <div className="space-y-3">
+                                  <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
+                                    <Brain className="w-3.5 h-3.5" /> Core Reasoning
+                                  </h4>
+                                  <p className="text-sm font-medium text-foreground/70 leading-relaxed pl-5">
+                                    {q.rubric.typicalReasoning || "No reasoning criteria provided."}
+                                  </p>
+                                </div>
+
+                                <div className="grid sm:grid-cols-3 gap-6">
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-green-600">
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                      <span className="text-[10px] font-black uppercase tracking-widest">Good Answer</span>
+                                    </div>
+                                    <ul className="space-y-2 pl-1">
+                                      {q.rubric.goodSignals?.map((s, i) => (
+                                        <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
+                                          <div className="h-1 w-1 rounded-full bg-green-500 mt-1.5 shrink-0" />
+                                          {s}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-blue-600">
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                      <span className="text-[10px] font-black uppercase tracking-widest">Moderate</span>
+                                    </div>
+                                    <ul className="space-y-2 pl-1">
+                                      {q.rubric.moderateSignals?.map((s, i) => (
+                                        <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
+                                          <div className="h-1 w-1 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                                          {s}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-amber-600">
+                                      <AlertCircle className="w-3.5 h-3.5" />
+                                      <span className="text-[10px] font-black uppercase tracking-widest">Bad Answer</span>
+                                    </div>
+                                    <ul className="space-y-2 pl-1">
+                                      {q.rubric.poorSignals?.map((s, i) => (
+                                        <li key={i} className="flex items-start gap-2 text-xs font-medium text-muted-foreground">
+                                          <div className="h-1 w-1 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                                          {s}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </div>
+                              </div>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => toggleMandatory(q.id)}
+                                onKeyDown={(e) => e.key === "Enter" && toggleMandatory(q.id)}
+                                className="px-6 py-4 bg-card border-t border-border/30 flex items-center"
+                              >
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex items-center gap-2.5 rounded-xl border-2 border-border bg-muted/20 px-3 py-2 cursor-pointer hover:bg-muted/40 hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+                                        <span onClick={(e) => e.stopPropagation()}>
+                                          <Checkbox
+                                            checked={q.isMandatory}
+                                            onCheckedChange={() => toggleMandatory(q.id)}
+                                            className="h-5 w-5 shrink-0 rounded border-2 border-foreground/40 bg-background data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                          />
+                                        </span>
+                                        <span className={`text-sm font-bold select-none ${q.isMandatory ? "text-primary" : "text-foreground/80"}`}>
+                                          Include in interview
+                                        </span>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" align="start" sideOffset={6} className="font-medium">
+                                      Click here to include
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               <div className="lg:col-span-6 lg:sticky lg:top-4">
                 <div className="flex flex-col h-[calc(100vh-140px)] space-y-6">
                   <div className="flex items-center justify-between gap-4 bg-background/80 backdrop-blur-md py-2 px-1">
-                    <div className="flex items-center gap-4">
-                      <h2 className="text-xl font-extrabold tracking-tight">Screening Criteria</h2>
-                      {selectedForRefine.size > 0 && (
-                        <Badge variant="secondary" className="rounded-full px-3 py-0.5 bg-primary/10 text-primary border-primary/20 animate-in zoom-in duration-300">
-                          {selectedForRefine.size} Selected
-                        </Badge>
-                      )}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-4">
+                        <h2 className="text-xl font-extrabold tracking-tight">Screening Criteria</h2>
+                        {selectedForRefine.size > 0 && (
+                          <Badge variant="secondary" className="rounded-full px-3 py-0.5 bg-primary/10 text-primary border-primary/20 animate-in zoom-in duration-300">
+                            {selectedForRefine.size} Selected
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground font-medium">
+                        Click a question to see its <span className="text-primary font-semibold">scoring rubric</span> →
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       {selectedForRefine.size > 0 ? (
@@ -730,9 +795,9 @@ export default function QuestionsSetupPage() {
                                     key={question.id}
                                     data-testid={`question-item-${question.id}`}
                                     onClick={() => setSelectedQuestionId(question.id)}
-                                    className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden ${selectedQuestionId === question.id
+                                    className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden cursor-pointer ${selectedQuestionId === question.id
                                       ? "ring-1 ring-primary border-primary shadow-xl shadow-primary/5 bg-background"
-                                      : "hover:bg-card/80 bg-card border-border/40 shadow-sm"
+                                      : "hover:bg-card/80 hover:border-primary/30 bg-card border-border/40 shadow-sm"
                                       } ${invalidQuestionIds.has(question.id) ? "border-destructive bg-destructive/5" : ""}`}
                                   >
                                     {selectedQuestionId === question.id && (
@@ -841,28 +906,45 @@ export default function QuestionsSetupPage() {
                                           </div>
 
                                           <div className="flex items-center justify-between border-t border-border/40 pt-4">
-                                            <div
-                                              className="flex items-center gap-2.5 cursor-pointer group/check"
-                                              onClick={(e: React.MouseEvent) => {
-                                                e.stopPropagation();
-                                                toggleMandatory(question.id);
-                                              }}
-                                            >
-                                              <Checkbox
-                                                checked={question.isMandatory}
-                                                onCheckedChange={() => toggleMandatory(question.id)}
-                                                className="h-4.5 w-4.5 rounded-md data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                                              />
-                                              <span className={`text-xs font-bold transition-colors ${question.isMandatory ? "text-primary" : "text-muted-foreground group-hover/check:text-foreground"
-                                                }`}>
-                                                {question.isMandatory ? "Included in interview" : "Exclude from interview"}
-                                              </span>
-                                            </div>
+                                            <TooltipProvider>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <div
+                                                    className="inline-flex items-center gap-2.5 rounded-xl border-2 border-border bg-muted/20 px-3 py-2 cursor-pointer hover:bg-muted/40 hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                                                    onClick={(e: React.MouseEvent) => {
+                                                      e.stopPropagation();
+                                                      toggleMandatory(question.id);
+                                                    }}
+                                                  >
+                                                    <Checkbox
+                                                      checked={question.isMandatory}
+                                                      onCheckedChange={() => toggleMandatory(question.id)}
+                                                      className="h-5 w-5 shrink-0 rounded border-2 border-foreground/40 bg-background data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                                    />
+                                                    <span className={`text-xs font-bold select-none transition-colors ${question.isMandatory ? "text-primary" : "text-foreground/80"}`}>
+                                                      {question.isMandatory ? "Included in interview" : "Exclude from interview"}
+                                                    </span>
+                                                  </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" align="start" sideOffset={6} className="font-medium">
+                                                  Click here to include
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
 
                                             <div className="flex items-center gap-2">
                                               {!editedQuestionIds.has(question.id) ? (
-                                                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider">
-                                                  <Sparkles className="w-3 h-3" /> AI Generated
+                                                <Badge
+                                                  variant="outline"
+                                                  className="bg-primary/5 text-primary border-primary/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider cursor-pointer hover:bg-primary/10 transition-colors"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedQuestionId(question.id);
+                                                    setIsRefiningIndividual(true);
+                                                    setShowRefineDialog(true);
+                                                  }}
+                                                >
+                                                  <Sparkles className="w-3 h-3" /> AI Refine
                                                 </Badge>
                                               ) : (
                                                 <Badge variant="outline" className="bg-amber-500/5 text-amber-600 border-amber-500/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider">
@@ -897,7 +979,7 @@ export default function QuestionsSetupPage() {
                     <CardDescription className="text-xs font-medium text-muted-foreground/70 ml-11">
                       {selectedQuestion
                         ? "AI-generated signals for scoring answers"
-                        : "Select a question on the left to see criteria"}
+                        : "Click any question on the left to see how answers will be scored"}
                     </CardDescription>
                   </div>
 
@@ -978,14 +1060,20 @@ export default function QuestionsSetupPage() {
                         )}
                       </CardContent>
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center p-12 text-center space-y-4">
-                        <div className="h-20 w-20 rounded-3xl bg-muted/30 border border-dashed border-border flex items-center justify-center">
-                          <Brain className="h-10 w-10 text-muted-foreground/20" />
+                      <div className="h-full flex flex-col items-center justify-center p-12 text-center space-y-6">
+                        <div className="h-24 w-24 rounded-3xl bg-primary/5 border-2 border-dashed border-primary/20 flex items-center justify-center">
+                          <ShieldCheck className="h-12 w-12 text-primary/30" />
                         </div>
-                        <div className="space-y-1">
-                          <h4 className="font-bold text-foreground/70">No Question Selected</h4>
-                          <p className="text-sm text-muted-foreground max-w-[200px] mx-auto">Click any question on the left to see its scoring rubric.</p>
+                        <div className="space-y-2 max-w-[260px]">
+                          <h4 className="font-bold text-foreground/80 text-base">View scoring rubric</h4>
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            Click any <strong className="text-foreground/70">question card on the left</strong> to see how candidate answers will be scored — good signals, moderate signals, and red flags.
+                          </p>
                         </div>
+                        <p className="text-xs text-muted-foreground/80 font-medium flex items-center gap-1.5">
+                          <span className="inline-block w-5 h-5 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-[10px] font-black">←</span>
+                          Questions are clickable
+                        </p>
                       </div>
                     )}
                   </ScrollArea>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Header } from "@/components/header";
 import { GeneratingQuestionsProgress } from "@/components/generating-questions-progress";
+import { RefiningJDProgress } from "@/components/refining-jd-progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +26,12 @@ import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, Settings, User, Globe, Clock, Info, Edit } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, Settings, User, Globe, Clock, Info, Edit, MapPin, Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { LocationCombobox, type LocationValue } from "@/components/location-combobox";
+
+const MIN_JD_LENGTH = 200;
+const MIN_SME_LENGTH = 50;
 
 export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
@@ -96,12 +101,12 @@ export default function ProjectSetupPage() {
           ? { city: locCity, state: locState, country: locCountry }
           : null
       );
-      // Support both camelCase and snake_case from API; no default — leave empty for new projects
-      const screeningMins = p.interviewDuration ?? p.interview_duration;
-      const screeningNum = screeningMins != null && screeningMins !== "" ? Number(screeningMins) : NaN;
-      setInterviewDuration(!Number.isNaN(screeningNum) && screeningNum > 0 ? screeningNum : "");
-      const totalMins = p.totalMinutes ?? p.total_minutes;
-      const totalNum = totalMins != null && totalMins !== "" ? Number(totalMins) : NaN;
+      // Support both camelCase and snake_case from API; pre-fill from saved project
+      const screeningRaw = p.interviewDuration ?? p.interview_duration;
+      const screeningNum = screeningRaw != null && screeningRaw !== "" ? Number(screeningRaw) : NaN;
+      setInterviewDuration(!Number.isNaN(screeningNum) && screeningNum >= 0 ? screeningNum : "");
+      const totalRaw = p.totalMinutes ?? p.total_minutes;
+      const totalNum = totalRaw != null && totalRaw !== "" ? Number(totalRaw) : NaN;
       setTotalMinutes(!Number.isNaN(totalNum) && totalNum >= 0 ? totalNum : "");
     }
   }, [project]);
@@ -152,12 +157,66 @@ export default function ProjectSetupPage() {
     },
   });
 
+  const refineJd = useMutation({
+    mutationFn: async (text: string) => {
+      const response = await fetch(`/api/projects/${id}/refine-jd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jdText: text }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to refine JD" }));
+        throw new Error(errorData.error || "Failed to refine JD");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setJdText(data.refinedJd);
+      toast({ title: "JD Refined", description: "The job description has been cleaned up by AI." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to refine JD. Please try again.", variant: "destructive" });
+    },
+  });
+
   const isScreeningExceedsInterview =
     typeof totalMinutes === "number" &&
     typeof interviewDuration === "number" &&
     interviewDuration > totalMinutes;
 
-  const handleNextToJobDescription = () => {
+  const isTotalInterviewTimeMissing = totalMinutes === "" || totalMinutes === undefined || (typeof totalMinutes === "number" && totalMinutes <= 0);
+
+  const getTotalMinutesForApi = (): number | undefined => {
+    if (typeof totalMinutes === "number" && totalMinutes > 0) return totalMinutes;
+    if (totalMinutes !== "" && totalMinutes != null) {
+      const n = Number(totalMinutes);
+      if (!Number.isNaN(n) && n > 0) return n;
+    }
+    return undefined;
+  };
+
+  const saveCampaignFields = () =>
+    updateProject.mutateAsync({
+      title,
+      jdText,
+      smeNotesText: smeNotes,
+      companyWebsite: companyWebsite || undefined,
+      locationCity: location?.city || undefined,
+      locationState: location?.state || undefined,
+      locationCountry: location?.country || undefined,
+      interviewDuration: interviewDuration || undefined,
+      totalMinutes: getTotalMinutesForApi(),
+    } as Partial<Project>);
+
+  const handleNextToJobDescription = async () => {
+    if (isTotalInterviewTimeMissing) {
+      toast({
+        title: "Total Interview Time required",
+        description: "Please enter the total interview time (minutes) before continuing.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid duration",
@@ -166,10 +225,23 @@ export default function ProjectSetupPage() {
       });
       return;
     }
-    setSetupStep(2);
+    try {
+      await saveCampaignFields();
+      setSetupStep(2);
+    } catch {
+      // Error toast already from mutation
+    }
   };
 
   const handleSave = () => {
+    if (isTotalInterviewTimeMissing) {
+      toast({
+        title: "Total Interview Time required",
+        description: "Please enter the total interview time (minutes) before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid Duration",
@@ -179,6 +251,7 @@ export default function ProjectSetupPage() {
       return;
     }
 
+    const totalMins = getTotalMinutesForApi();
     updateProject.mutate({
       title,
       jdText,
@@ -188,13 +261,41 @@ export default function ProjectSetupPage() {
       locationState: location?.state || undefined,
       locationCountry: location?.country || undefined,
       interviewDuration: interviewDuration || undefined,
-      totalMinutes: totalMinutes || undefined,
+      ...(totalMins != null && { totalMinutes: totalMins }),
     } as any);
   };
 
   const handleGenerate = async () => {
+    if (isTotalInterviewTimeMissing) {
+      toast({
+        title: "Total Interview Time required",
+        description: "Please enter the total interview time (minutes) in Campaign Settings first.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!jdText.trim()) {
       toast({ title: "Job description required", description: "Please add a job description first.", variant: "destructive" });
+      return;
+    }
+
+    if (jdText.trim().length < MIN_JD_LENGTH) {
+      toast({
+        title: "Job description too short",
+        description: `Please provide at least ${MIN_JD_LENGTH} characters for the job description to ensure AI can generate quality questions.`,
+        variant: "destructive"
+      });
+      setSetupStep(2);
+      return;
+    }
+
+    if (smeNotes.trim().length > 0 && smeNotes.trim().length < MIN_SME_LENGTH) {
+      toast({
+        title: "SME notes too short",
+        description: `Please provide at least ${MIN_SME_LENGTH} characters for your instructions, or leave them blank if you don't have specific requirements.`,
+        variant: "destructive"
+      });
+      setSetupStep(3);
       return;
     }
 
@@ -217,7 +318,7 @@ export default function ProjectSetupPage() {
         locationState: location?.state || undefined,
         locationCountry: location?.country || undefined,
         interviewDuration: interviewDuration || undefined,
-        totalMinutes: totalMinutes || undefined,
+        ...(getTotalMinutesForApi() != null && { totalMinutes: getTotalMinutesForApi() }),
       } as any);
 
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -257,14 +358,27 @@ export default function ProjectSetupPage() {
               </Link>
             </Button>
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-bold py-0 h-5 px-2 rounded-md bg-background/50 border-primary/20 text-primary/80">
-                  Project Setup
-                </Badge>
-              </div>
               <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{title || "New Project"}</h1>
+              {project && (
+                <div className="flex items-center gap-4 mt-1.5 text-muted-foreground text-xs font-medium">
+                  {(project.locationCity || project.locationState || project.locationCountry) && (
+                    <div className="flex items-center gap-1.5 bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">
+                      <MapPin className="w-3 h-3 text-primary/60" />
+                      <span>
+                        {[project.locationCity, project.locationState, project.locationCountry].filter(Boolean).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {project.createdAt && (
+                    <div className="flex items-center gap-1.5 bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">
+                      <Calendar className="w-3 h-3 text-primary/60" />
+                      <span>{format(new Date(project.createdAt), "MMM d, yyyy")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <Button onClick={handleSave} disabled={updateProject.isPending} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
+            <Button onClick={handleSave} disabled={updateProject.isPending || isTotalInterviewTimeMissing} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
               {updateProject.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
@@ -328,7 +442,11 @@ export default function ProjectSetupPage() {
             <GeneratingQuestionsProgress />
           )}
 
-          {!generateQuestions.isPending && setupStep === 1 && (
+          {refineJd.isPending && (
+            <RefiningJDProgress />
+          )}
+
+          {!generateQuestions.isPending && !refineJd.isPending && setupStep === 1 && (
             <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
               <CardHeader className="p-10 pb-6">
                 <div className="flex items-center gap-3 mb-2">
@@ -360,22 +478,32 @@ export default function ProjectSetupPage() {
                       <Label htmlFor="total-minutes" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                         <Clock className="w-3 h-3" />
                         Total Interview Time (min)
+                        <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="total-minutes"
                         type="number"
-                        value={totalMinutes}
+                        min={1}
+                        required
+                        value={totalMinutes === "" || totalMinutes === undefined ? "" : totalMinutes}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === "") {
                             setTotalMinutes("");
                             return;
                           }
-                          setTotalMinutes(parseInt(val) || 0);
+                          const num = parseInt(val, 10);
+                          setTotalMinutes(Number.isNaN(num) ? "" : num);
                         }}
-                        placeholder="Minutes"
-                        className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                        placeholder="e.g. 45"
+                        className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${isTotalInterviewTimeMissing ? "border-destructive/70 ring-1 ring-destructive/20" : ""}`}
                       />
+                      {isTotalInterviewTimeMissing && (
+                        <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                          <Info className="w-3.5 h-3.5" />
+                          Required. Enter total interview time in minutes.
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-3">
@@ -437,16 +565,30 @@ export default function ProjectSetupPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-6">
-                  <Button onClick={handleNextToJobDescription} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto" data-testid="button-next-job-description">
-                    Next: Job Description
-                    <ChevronRight className="w-4 h-4" />
+                  <Button
+                    onClick={handleNextToJobDescription}
+                    disabled={isTotalInterviewTimeMissing || updateProject.isPending}
+                    className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto"
+                    data-testid="button-next-job-description"
+                  >
+                    {updateProject.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        Next: Job Description
+                        <ChevronRight className="w-4 h-4" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {!generateQuestions.isPending && setupStep === 2 && (
+          {!generateQuestions.isPending && !refineJd.isPending && setupStep === 2 && (
             <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
               <CardHeader className="p-10 pb-6">
                 <div className="flex items-center justify-between">
@@ -456,6 +598,16 @@ export default function ProjectSetupPage() {
                     </div>
                     <CardTitle className="text-2xl font-black tracking-tight">Job Description</CardTitle>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refineJd.mutate(jdText)}
+                    disabled={refineJd.isPending || !jdText.trim()}
+                    className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary font-bold gap-2"
+                  >
+                    {refineJd.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Refine with AI
+                  </Button>
                 </div>
                 <CardDescription className="text-base font-medium ml-13 mt-2">
                   Paste the job description (text only). Our AI will generate screening questions and grading rubrics.
@@ -488,7 +640,21 @@ export default function ProjectSetupPage() {
                     Back
                   </Button>
                   <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
-                    <Button onClick={() => setSetupStep(3)} className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12" disabled={!jdText.trim()}>
+                    <Button
+                      onClick={() => {
+                        if (jdText.trim().length < MIN_JD_LENGTH) {
+                          toast({
+                            title: "Job description too short",
+                            description: `Please provide at least ${MIN_JD_LENGTH} characters for a comprehensive job description.`,
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setSetupStep(3);
+                      }}
+                      className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
+                      disabled={!jdText.trim()}
+                    >
                       Next: SME Notes
                       <ChevronRight className="w-4 h-4" />
                     </Button>
@@ -498,7 +664,7 @@ export default function ProjectSetupPage() {
             </Card>
           )}
 
-          {!generateQuestions.isPending && setupStep === 3 && (
+          {!generateQuestions.isPending && !refineJd.isPending && setupStep === 3 && (
             <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
               <CardHeader className="p-10 pb-6">
                 <div className="flex items-center gap-3 mb-2">
@@ -544,14 +710,54 @@ export default function ProjectSetupPage() {
 
                   {hasExistingQuestions && !hasEdits ? (
                     <Button
-                      onClick={() => setSetupStep(2)}
+                      onClick={() => navigate(`/projects/${id}/questions`)}
                       className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                      data-testid="button-edit-jd-sme"
+                      data-testid="button-next-step"
                     >
-                      <Edit className="w-4 h-4" />
-                      Edit JD & SME Notes
+                      Next Step
                       <ChevronRight className="w-4 h-4" />
                     </Button>
+                  ) : hasExistingQuestions && hasEdits ? (
+                    <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
+                      <Button
+                        onClick={() => setShowGenerateConfirm(true)}
+                        disabled={generateQuestions.isPending || !jdText.trim()}
+                        className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        data-testid="button-regenerate-questions"
+                      >
+                        {generateQuestions.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Generating Rubric...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            Regenerate
+                            <ChevronRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </Button>
+                      <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-xl font-black">
+                            Regenerate Questions?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription className="text-base font-medium">
+                            Criteria have changed (JD, SME notes, screening time, or interview time). Regenerating will replace your existing questions with new ones based on the updated inputs.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="gap-3">
+                          <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleGenerate}
+                            className="rounded-xl font-bold bg-primary hover:bg-primary/90"
+                          >
+                            Confirm & Regenerate
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   ) : (
                     <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
                       <Button

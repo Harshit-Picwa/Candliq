@@ -272,7 +272,7 @@ ${customInstructions ? `ADDITIONAL INSTRUCTIONS:\n${customInstructions}\n` : ""}
 ${existingQuestionTexts.length ? `EXISTING QUESTIONS (DO NOT REPEAT OR PARAPHRASE THESE):\n${existingQuestionTexts.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nWhen regenerating, you MUST produce an entirely new set of questions that do not overlap in meaning with the above list. Avoid trivial rewording.\n` : ""}
 
 Instructions for Output:
-1. Extract 3-5 key competencies from the job description. Focus strictly on technical and role-specific skills.
+1. Extract 3-5 key competencies from the job description. Focus on the core technical requirements, key responsibilities, and role-specific hard skills.
 2. Generate exactly ${targetQuestionCount} screening questions total, distributed across these competencies.
 3. Ensure questions are well-distributed and deeply technical/role-oriented. A significant portion (at least 50%) must be **Scenario-Based** (e.g., "Given situation X, how would you handle it using tool Y?").
 4. ABSOLUTELY NO CULTURE-FIT OR SOFT-SKILLS QUESTIONS. Do not ask about personality, teamwork (unless technical collaboration like Git workflow), or "where they see themselves." Focus exclusively on the hard skills, domain knowledge, and operational proficiency required by the JD and SME notes.
@@ -581,7 +581,7 @@ CUSTOM INSTRUCTIONS:
 ${instructions}
 
 Instructions:
-1. Refine the question text to be more effective, technical, and role-specific. Avoid generic or "fluff" phrasing. Use "technical skills" where appropriate. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
+1. Refine the question text to be more effective, technical, and role-specific. Avoid generic or "fluff" phrasing. Use "technical skills" where appropriate. Focus on technical requirements, responsibilities, and hard skills. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
 2. Update the rubric (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) to match the new question.
    - typicalReasoning: A short, declarative paragraph (2–4 sentences): (1) what the question is probing and why it matters, (2) the key concepts a strong answer must address, (3) what good reasoning looks like. Use direct statements ("A strong answer will…", "The ideal response addresses…"). Avoid vague "the candidate should talk about X"; explain what a good answer contains and how it demonstrates competence.
    - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").
@@ -619,6 +619,41 @@ Only output valid JSON object. No markdown code blocks.`;
   }
 }
 
+export async function refineJobDescription(jdText: string): Promise<string> {
+  const prompt = `You are an expert HR consultant and technical recruiter.
+  
+  Your task is to refine the following Job Description (JD). 
+  Some users might paste a lot of clutter like company history, benefits, internal administrative details, or legal disclaimers.
+  
+  Please extract and keep ONLY the relevant job description points, such as:
+  - Key roles and responsibilities
+  - Required technical skills and qualifications
+  - Preferred skills and experience
+  
+  Discard:
+  - Company history or "About Us" deep-dives (unless role-specific context)
+  - Detailed benefits list (insurance, gym memberships, etc)
+  - Application instructions or legal disclaimers
+  
+  FORMATTING:
+  - Return the refined JD in a clean, bulleted format.
+  - Keep it professional and concise.
+  
+  JOB DESCRIPTION TO REFINE:
+  ${jdText}
+  
+  Only output the refined job description text. No extra commentary.`;
+
+  try {
+    const { text } = await generateTextWithRetries(prompt);
+    // Remove any markdown code blocks if the AI accidentally adds them
+    return text.replace(/```(?:markdown)?/gi, "").replace(/```/g, "").trim();
+  } catch (error: any) {
+    console.error("[gemini] Refine JD error:", error);
+    throw error;
+  }
+}
+
 export async function refineMultipleQuestions(
   jdText: string,
   questions: ScreeningQuestion[],
@@ -634,7 +669,7 @@ CUSTOM INSTRUCTIONS:
 ${instructions}
 
 Instructions:
-1. Refine each question text to be more effective, technical, and role-specific. Avoid generic phrasing. Use "technical skills" where appropriate. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
+1. Refine each question text to be more effective, technical, and role-specific. Avoid generic phrasing. Use "technical skills" where appropriate. Focus on technical requirements, responsibilities, and hard skills. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
 2. Update the rubrics (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) for each refined question.
    - typicalReasoning: A short, declarative paragraph (2–4 sentences): (1) what the question is probing and why it matters, (2) the key concepts a strong answer must address, (3) what good reasoning looks like. Use direct statements ("A strong answer will…", "The ideal response addresses…"). Avoid vague "the candidate should talk about X"; explain what a good answer contains and how it demonstrates competence.
    - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").

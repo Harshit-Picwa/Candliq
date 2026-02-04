@@ -8,9 +8,25 @@ import type {
 } from "@shared/schema";
 
 /** Map Prisma project (aiChatHistory) to Project type (aiChatHistoryJson). */
-function toProject(row: { aiChatHistory?: unknown; [key: string]: unknown }): Project {
+function toProject(row: { aiChatHistory?: unknown;[key: string]: unknown }): Project {
   const { aiChatHistory, ...rest } = row;
-  return { ...rest, aiChatHistoryJson: aiChatHistory ?? null } as Project;
+  // Handle potential case mismatches between DB/Prisma row and the Project type
+  const result = { ...rest, aiChatHistoryJson: aiChatHistory ?? null } as any;
+
+  if (result.total_minutes !== undefined && result.totalMinutes === undefined) {
+    result.totalMinutes = result.total_minutes;
+  }
+  if (result.interview_duration !== undefined && result.interviewDuration === undefined) {
+    result.interviewDuration = result.interview_duration;
+  }
+  if (result.intro_minutes !== undefined && result.introMinutes === undefined) {
+    result.introMinutes = result.intro_minutes;
+  }
+  if (result.closure_minutes !== undefined && result.closureMinutes === undefined) {
+    result.closureMinutes = result.closure_minutes;
+  }
+
+  return result as Project;
 }
 
 export interface IStorage {
@@ -80,15 +96,26 @@ export class DatabaseStorage implements IStorage {
     if (Object.prototype.hasOwnProperty.call(raw, "interviewDuration")) payload.interviewDuration = raw.interviewDuration as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "introMinutes")) payload.introMinutes = raw.introMinutes as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "closureMinutes")) payload.closureMinutes = raw.closureMinutes as number | null;
-    if (Object.prototype.hasOwnProperty.call(raw, "totalMinutes")) (payload as Record<string, unknown>).totalMinutes = raw.totalMinutes as number | null;
+    // Total Interview Time (min) - persisted to DB (Prisma schema uses camelCase totalMinutes)
+    if (Object.prototype.hasOwnProperty.call(raw, "totalMinutes")) {
+      const val = raw.totalMinutes;
+      payload.totalMinutes = val === null || val === undefined ? null : Number(val);
+    } else if (Object.prototype.hasOwnProperty.call(raw, "total_minutes")) {
+      // Accept snake_case from client but map to camelCase for Prisma
+      const val = raw.total_minutes;
+      payload.totalMinutes = val === null || val === undefined ? null : Number(val);
+    }
     if (Object.prototype.hasOwnProperty.call(raw, "screeningQuestionsJson")) payload.screeningQuestionsJson = raw.screeningQuestionsJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "aiChatHistoryJson")) payload.aiChatHistory = raw.aiChatHistoryJson as Prisma.InputJsonValue;
-    // Omit totalMinutes from update if Prisma client doesn't support it yet (run `npx prisma generate` after migration)
-    const { totalMinutes: _tm, ...updateData } = payload as Record<string, unknown>;
+
+    // Prisma only accepts camelCase totalMinutes; ensure snake_case never reaches it
+    const payloadData = payload as Record<string, unknown>;
+    if ("total_minutes" in payloadData) delete payloadData.total_minutes;
+
     const updated = await db.project.update({
       where: { id },
-      data: updateData as Prisma.ProjectUpdateInput,
+      data: payload as Prisma.ProjectUpdateInput,
     });
     return toProject(updated);
   }

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
-import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions } from "./services/gemini";
+import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions, refineJobDescription } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
 import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project } from "@shared/schema";
 
@@ -67,10 +67,15 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Unauthorized" });
       }
       const userId = req.user.id;
-      const { title } = req.body;
+      const { title, totalMinutes, interviewDuration } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
 
-      const project = await storage.createProject({ userId, title });
+      const project = await storage.createProject({
+        userId,
+        title,
+        ...(totalMinutes != null && totalMinutes !== "" && { totalMinutes: Number(totalMinutes) || undefined }),
+        ...(interviewDuration != null && interviewDuration !== "" && { interviewDuration: Number(interviewDuration) || undefined }),
+      });
       res.status(201).json(project);
     } catch (error) {
       console.error("[create-project] Error:", error);
@@ -268,6 +273,21 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[refine-selected] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to refine selected questions", details: error?.message });
+    }
+  });
+
+  app.post("/api/projects/:id/refine-jd", isAuthenticated, async (req, res) => {
+    try {
+      const { jdText } = req.body;
+      if (!jdText) return res.status(400).json({ error: "Job description is required" });
+
+      console.log(`[refine-jd] Refining JD for project ${req.params.id}`);
+      const refinedJd = await refineJobDescription(jdText);
+
+      res.json({ refinedJd });
+    } catch (error: any) {
+      console.error("[refine-jd] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to refine job description", details: error?.message });
     }
   });
 

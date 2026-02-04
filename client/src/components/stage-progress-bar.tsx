@@ -17,8 +17,8 @@ const STAGES = [
   },
   {
     stage: 2 as const,
-    label: "Refine & Review",
-    sublabel: "Approve questions",
+    label: "Generated questions",
+    sublabel: "Generated questions",
     icon: Edit,
   },
   {
@@ -47,7 +47,7 @@ interface StageProgressBarProps {
 /**
  * Three-stage progress bar for the hiring flow:
  * 1. JD & SME Notes → Create questions
- * 2. Refine & review → Approve questions
+ * 2. Generated questions
  * 3. Ready for interview
  */
 export function StageProgressBar({ currentStage, className, onStageClick, clickableStages, questionCount, disabledStageTooltips }: StageProgressBarProps) {
@@ -119,7 +119,7 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
                       isCurrent ? "text-primary-foreground/80" : "text-muted-foreground"
                     )}
                   >
-                    {stage === 2 && questionCount ? `Approve ${questionCount} questions` : sublabel}
+                    {sublabel}
                   </p>
                 </div>
               </div>
