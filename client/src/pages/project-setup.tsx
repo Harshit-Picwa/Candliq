@@ -29,6 +29,9 @@ import type { Project } from "@shared/schema";
 import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, Settings, User, Globe, Clock, Info, Edit, MapPin, Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { LocationCombobox, type LocationValue } from "@/components/location-combobox";
+import { ProjectLayout } from "@/components/project-layout";
+import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
 
 const MIN_JD_LENGTH = 200;
 const MIN_SME_LENGTH = 50;
@@ -51,6 +54,7 @@ export default function ProjectSetupPage() {
   const [totalMinutes, setTotalMinutes] = useState<number | "">("");
   const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [triedToAdvance, setTriedToAdvance] = useState(false);
 
   const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
   const projectRecord = project as Record<string, unknown> | undefined;
@@ -172,7 +176,10 @@ export default function ProjectSetupPage() {
     },
     onSuccess: (data) => {
       setJdText(data.refinedJd);
-      toast({ title: "JD Refined", description: "The job description has been cleaned up by AI." });
+      if (data.suggestedTitle && (!title || title.toLowerCase().includes("new project") || title.toLowerCase() === "test")) {
+        setTitle(data.suggestedTitle);
+      }
+      toast({ title: "JD Refined", description: "The job description and project title have been updated by AI." });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to refine JD. Please try again.", variant: "destructive" });
@@ -209,6 +216,7 @@ export default function ProjectSetupPage() {
     } as Partial<Project>);
 
   const handleNextToJobDescription = async () => {
+    setTriedToAdvance(true);
     if (isTotalInterviewTimeMissing) {
       toast({
         title: "Total Interview Time required",
@@ -347,466 +355,427 @@ export default function ProjectSetupPage() {
   }
 
   return (
-    <DesktopOnlyGuard>
-      <div className="min-h-screen page-gradient">
-        <Header />
-        <main className="max-w-5xl mx-auto px-8 py-12">
-          <div className="flex items-center gap-4 mb-8">
-            <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background/80">
-              <Link href="/dashboard">
-                <ArrowLeft className="w-5 h-5" />
-              </Link>
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-2xl font-extrabold tracking-tight text-foreground/90">{title || "New Project"}</h1>
-              {project && (
-                <div className="flex items-center gap-4 mt-1.5 text-muted-foreground text-xs font-medium">
-                  {(project.locationCity || project.locationState || project.locationCountry) && (
-                    <div className="flex items-center gap-1.5 bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">
-                      <MapPin className="w-3 h-3 text-primary/60" />
-                      <span>
-                        {[project.locationCity, project.locationState, project.locationCountry].filter(Boolean).join(", ")}
-                      </span>
-                    </div>
-                  )}
-                  {project.createdAt && (
-                    <div className="flex items-center gap-1.5 bg-muted/40 px-2 py-0.5 rounded-full border border-border/40">
-                      <Calendar className="w-3 h-3 text-primary/60" />
-                      <span>{format(new Date(project.createdAt), "MMM d, yyyy")}</span>
-                    </div>
-                  )}
-                </div>
+    <ProjectLayout
+      project={project}
+      isLoading={isLoading}
+      currentStage={1}
+      stageDescription="Stage 1: Enter JD and SME notes, then generate questions"
+      onStageClick={(stage) => {
+        if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions`);
+      }}
+      clickableStages={hasExistingQuestions ? [2] : []}
+      actions={
+        <Button onClick={handleSave} disabled={updateProject.isPending || isTotalInterviewTimeMissing} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
+          {updateProject.isPending ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
+          )}
+          Save Changes
+        </Button>
+      }
+      subNavigation={
+        <div className="relative flex items-center w-full max-w-2xl bg-muted/30 backdrop-blur-xl p-1.5 rounded-[1.25rem] border border-border/40 shadow-xl shadow-black/5 ring-1 ring-white/10">
+          {[
+            { stepId: 1 as const, label: "Campaign", icon: Settings },
+            { stepId: 2 as const, label: "JD Setup", icon: FileText },
+            { stepId: 3 as const, label: "SME Notes", icon: Brain },
+          ].map(({ stepId, label, icon: Icon }, i) => (
+            <div key={stepId} className="flex-1 relative">
+              <button
+                type="button"
+                onClick={() => setSetupStep(stepId)}
+                className={`relative z-10 flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-black transition-all w-full justify-center uppercase tracking-widest whitespace-nowrap ${setupStep === stepId
+                  ? "text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                  }`}
+              >
+                <Icon className={`w-3.5 h-3.5 transition-transform ${setupStep === stepId ? "scale-110" : "opacity-60"}`} />
+                <span className="hidden sm:inline whitespace-nowrap">{label}</span>
+              </button>
+              {setupStep === stepId && (
+                <motion.div
+                  layoutId="active-setup-step"
+                  className="absolute inset-0 bg-primary rounded-xl shadow-lg shadow-primary/25 z-0"
+                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                />
               )}
             </div>
-            <Button onClick={handleSave} disabled={updateProject.isPending || isTotalInterviewTimeMissing} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
-              {updateProject.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
-              )}
-              Save Changes
-            </Button>
-          </div>
+          ))}
+        </div>
+      }
+    >
 
-          {/* Three-stage progress: Stage 1 = JD & SME Notes → Create questions; Stage 2 = Refine & Review (clickable when questions exist) */}
-          <div className="mb-6 max-w-4xl mx-auto">
-            <StageProgressBar
-              currentStage={1}
-              onStageClick={(stage) => {
-                if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions`);
-              }}
-              clickableStages={hasExistingQuestions ? [2] : []}
-              disabledStageTooltips={hasExistingQuestions ? undefined : { 2: "Generate Questions first" }}
-            />
-          </div>
+      {/* Progress card while questions are being generated (after confirm) */}
+      {generateQuestions.isPending && (
+        <GeneratingQuestionsProgress />
+      )}
 
-          <div className="flex items-center justify-center mb-4">
-            <p className="text-xs font-medium text-muted-foreground">Stage 1: Enter JD and SME notes, then generate questions</p>
-          </div>
+      {refineJd.isPending && (
+        <RefiningJDProgress />
+      )}
 
-          <div className="flex items-center justify-center mb-12">
-            <div className="flex items-center w-full max-w-3xl bg-card/40 backdrop-blur-sm p-2 rounded-2xl border border-border/40 shadow-sm">
-              {[
-                { step: 1 as const, label: "Campaign", icon: Settings },
-                { step: 2 as const, label: "Job Description", icon: FileText },
-                { step: 3 as const, label: "SME Notes", icon: Brain },
-              ].map(({ step, label, icon: Icon }, i) => (
-                <div key={step} className="flex items-center flex-1 last:flex-initial">
-                  <button
-                    type="button"
-                    onClick={() => setSetupStep(step)}
-                    className={`flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-bold transition-all w-full justify-center ${setupStep === step
-                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 ring-1 ring-primary/20"
-                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-                      }`}
-                  >
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-xs font-black ${setupStep === step ? "bg-primary-foreground/20 text-white" : "bg-muted text-muted-foreground"
-                      }`}>
-                      {step}
-                    </div>
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden sm:inline">{label}</span>
-                  </button>
-                  {i < 2 && (
-                    <div className="mx-2 text-muted-foreground/30">
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Progress card while questions are being generated (after confirm) */}
-          {generateQuestions.isPending && (
-            <GeneratingQuestionsProgress />
-          )}
-
-          {refineJd.isPending && (
-            <RefiningJDProgress />
-          )}
-
-          {!generateQuestions.isPending && !refineJd.isPending && setupStep === 1 && (
-            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
-              <CardHeader className="p-10 pb-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
-                    <Settings className="w-5 h-5 text-primary" />
-                  </div>
-                  <CardTitle className="text-2xl font-black tracking-tight">Campaign Settings</CardTitle>
-                </div>
-                <CardDescription className="text-base font-medium ml-13">
-                  Configure the foundational details for your hiring project.
+      {!generateQuestions.isPending && !refineJd.isPending && setupStep === 1 && (
+        <Card className="rounded-[2.5rem] border-border/40 shadow-2xl shadow-primary/5 overflow-hidden bg-card/40 backdrop-blur-xl ring-1 ring-white/5">
+          <CardHeader className="p-10 pb-6 relative overflow-hidden">
+            <div className="flex items-center gap-4 mb-3">
+              <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner ring-1 ring-primary/20">
+                <Settings className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-3xl font-black tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">Campaign Settings</CardTitle>
+                <CardDescription className="text-sm font-bold uppercase tracking-[0.1em] text-primary/60 mt-0.5">
+                  Core Project Metadata
                 </CardDescription>
-              </CardHeader>
-              <CardContent className="p-10 pt-0 space-y-8">
-                <div className="grid gap-8">
-                  <div className="space-y-3">
-                    <Label htmlFor="project-title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Project Title</Label>
-                    <Input
-                      id="project-title"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Senior Frontend Engineer"
-                      className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
-                      data-testid="input-project-title"
-                    />
-                  </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-10 pt-0 space-y-8">
+            <div className="grid gap-8">
+              <div className="space-y-3">
+                <Label htmlFor="project-title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Project Title</Label>
+                <Input
+                  id="project-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Senior Frontend Engineer"
+                  className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                  data-testid="input-project-title"
+                />
+              </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-3">
-                      <Label htmlFor="total-minutes" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
-                        <Clock className="w-3 h-3" />
-                        Total Interview Time (min)
-                        <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        id="total-minutes"
-                        type="number"
-                        min={1}
-                        required
-                        value={totalMinutes === "" || totalMinutes === undefined ? "" : totalMinutes}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "") {
-                            setTotalMinutes("");
-                            return;
-                          }
-                          const num = parseInt(val, 10);
-                          setTotalMinutes(Number.isNaN(num) ? "" : num);
-                        }}
-                        placeholder="e.g. 45"
-                        className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${isTotalInterviewTimeMissing ? "border-destructive/70 ring-1 ring-destructive/20" : ""}`}
-                      />
-                      {isTotalInterviewTimeMissing && (
-                        <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
-                          <Info className="w-3.5 h-3.5" />
-                          Required. Enter total interview time in minutes.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label htmlFor="interview-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
-                        <Clock className="w-3 h-3" />
-                        Total Screening Time (min)
-                      </Label>
-                      <Input
-                        id="interview-duration"
-                        type="number"
-                        value={interviewDuration}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "") {
-                            setInterviewDuration("");
-                            return;
-                          }
-                          setInterviewDuration(parseInt(val) || 0);
-                        }}
-                        placeholder="Minutes"
-                        className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${isScreeningExceedsInterview ? "border-destructive ring-1 ring-destructive/30" : ""}`}
-                      />
-                      {isScreeningExceedsInterview && (
-                        <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
-                          <Info className="w-3.5 h-3.5" />
-                          Only move forward if screening time is less than or equal to interview time.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
-                      <Globe className="w-3 h-3" />
-                      Company Website
-                    </Label>
-                    <Input
-                      id="company-website"
-                      type="url"
-                      value={companyWebsite}
-                      onChange={(e) => setCompanyWebsite(e.target.value)}
-                      placeholder="https://company.com"
-                      className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
-                    />
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label htmlFor="location" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">
-                      Location
-                    </Label>
-                    <LocationCombobox
-                      id="location"
-                      value={location}
-                      onChange={setLocation}
-                      placeholder="City, State, Country (Australia & NZ)"
-                      data-testid="input-location"
-                    />
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <Label htmlFor="total-minutes" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    Total Interview Time (min)
+                    <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="total-minutes"
+                    type="number"
+                    min={1}
+                    required
+                    value={totalMinutes === "" || totalMinutes === undefined ? "" : totalMinutes}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setTotalMinutes("");
+                        return;
+                      }
+                      const num = parseInt(val, 10);
+                      setTotalMinutes(Number.isNaN(num) ? "" : num);
+                    }}
+                    placeholder="e.g. 45"
+                    className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${triedToAdvance && isTotalInterviewTimeMissing ? "border-destructive/70 ring-1 ring-destructive/20" : ""}`}
+                  />
+                  {triedToAdvance && isTotalInterviewTimeMissing && (
+                    <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                      <Info className="w-3.5 h-3.5" />
+                      Required. Enter total interview time in minutes.
+                    </p>
+                  )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-6">
+                <div className="space-y-3">
+                  <Label htmlFor="interview-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    Total Screening Time (min)
+                  </Label>
+                  <Input
+                    id="interview-duration"
+                    type="number"
+                    value={interviewDuration}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setInterviewDuration("");
+                        return;
+                      }
+                      setInterviewDuration(parseInt(val) || 0);
+                    }}
+                    placeholder="e.g. 15"
+                    className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${isScreeningExceedsInterview ? "border-destructive ring-1 ring-destructive/30" : ""}`}
+                  />
+                  {isScreeningExceedsInterview && (
+                    <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                      <Info className="w-3.5 h-3.5" />
+                      Only move forward if screening time is less than or equal to interview time.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                  <Globe className="w-3 h-3" />
+                  Company Website
+                </Label>
+                <Input
+                  id="company-website"
+                  type="url"
+                  value={companyWebsite}
+                  onChange={(e) => setCompanyWebsite(e.target.value)}
+                  placeholder="https://company.com"
+                  className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="location" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">
+                  Location
+                </Label>
+                <LocationCombobox
+                  id="location"
+                  value={location}
+                  onChange={setLocation}
+                  placeholder="City, State, Country (Australia & NZ)"
+                  data-testid="input-location"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-6">
+              <Button
+                onClick={handleNextToJobDescription}
+                disabled={updateProject.isPending}
+                className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto"
+                data-testid="button-next-job-description"
+              >
+                {updateProject.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Next: Job Description
+                    <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!generateQuestions.isPending && !refineJd.isPending && setupStep === 2 && (
+        <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
+          <CardHeader className="p-10 pb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-primary" />
+                </div>
+                <CardTitle className="text-2xl font-black tracking-tight">Job Description</CardTitle>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refineJd.mutate(jdText)}
+                disabled={refineJd.isPending || !jdText.trim()}
+                className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary font-bold gap-2"
+              >
+                {refineJd.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Refine with AI
+              </Button>
+            </div>
+            <CardDescription className="text-base font-medium ml-13 mt-2">
+              Paste the job description (text only). Our AI will generate screening questions and grading rubrics.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-10 pt-0 space-y-6">
+            <div className="relative group">
+              <Textarea
+                value={jdText}
+                onChange={(e) => setJdText(e.target.value)}
+                placeholder="Paste the full job description here..."
+                className="min-h-[400px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
+                data-testid="textarea-jd"
+              />
+              {jdText.length === 0 && (
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-40 group-hover:opacity-60 transition-opacity">
+                  <div className="text-center space-y-4">
+                    <div className="h-16 w-16 rounded-[1.5rem] bg-muted mx-auto flex items-center justify-center">
+                      <FileText className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Empty Job Description</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6">
+              <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
+                <ChevronLeft className="w-4 h-4" />
+                Back
+              </Button>
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
+                <Button
+                  onClick={() => {
+                    if (jdText.trim().length < MIN_JD_LENGTH) {
+                      toast({
+                        title: "Job description too short",
+                        description: `Please provide at least ${MIN_JD_LENGTH} characters for a comprehensive job description.`,
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    setSetupStep(3);
+                  }}
+                  className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
+                  disabled={!jdText.trim()}
+                >
+                  Next: SME Notes
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!generateQuestions.isPending && !refineJd.isPending && setupStep === 3 && (
+        <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
+          <CardHeader className="p-10 pb-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Brain className="w-5 h-5 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-black tracking-tight">SME Notes</CardTitle>
+            </div>
+            <CardDescription className="text-base font-medium ml-13">
+              Add SME expectations (e.g. Head of Tech, Head of Marketing) so the AI generates questions and rubrics that match.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-10 pt-0 space-y-8">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 px-1 text-primary">
+                <Info className="w-4 h-4" />
+                <span className="text-xs font-black uppercase tracking-widest">SME Guidance (Optional)</span>
+              </div>
+              <Textarea
+                value={smeNotes}
+                onChange={(e) => setSmeNotes(e.target.value)}
+                placeholder="E.g., 'Focus heavily on architectural decisions' or 'Ask about experience with high-traffic systems'..."
+                className="min-h-[300px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
+                data-testid="textarea-sme"
+              />
+            </div>
+
+            <div className="p-6 rounded-[2rem] bg-primary/[0.03] border border-primary/10 flex items-center gap-6">
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Sparkles className="w-7 h-7 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">AI Ready</h4>
+                <p className="text-sm text-muted-foreground font-medium">Click below to extract competencies and generate tailored rubrics.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6">
+              <Button variant="ghost" onClick={() => setSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
+                <ChevronLeft className="w-4 h-4" />
+                Back
+              </Button>
+
+              {hasExistingQuestions && !hasEdits ? (
+                <Button
+                  onClick={() => navigate(`/projects/${id}/questions`)}
+                  className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                  data-testid="button-next-step"
+                >
+                  Next Step
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              ) : hasExistingQuestions && hasEdits ? (
+                <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
                   <Button
-                    onClick={handleNextToJobDescription}
-                    disabled={isTotalInterviewTimeMissing || updateProject.isPending}
-                    className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto"
-                    data-testid="button-next-job-description"
+                    onClick={() => setShowGenerateConfirm(true)}
+                    disabled={generateQuestions.isPending || !jdText.trim()}
+                    className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    data-testid="button-regenerate-questions"
                   >
-                    {updateProject.isPending ? (
+                    {generateQuestions.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
+                        Generating Rubric...
                       </>
                     ) : (
                       <>
-                        Next: Job Description
+                        <Sparkles className="w-4 h-4" />
+                        Regenerate
                         <ChevronRight className="w-4 h-4" />
                       </>
                     )}
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {!generateQuestions.isPending && !refineJd.isPending && setupStep === 2 && (
-            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
-              <CardHeader className="p-10 pb-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-2xl font-black tracking-tight">Job Description</CardTitle>
-                  </div>
+                  <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="text-xl font-black">
+                        Regenerate Questions?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription className="text-base font-medium">
+                        Criteria have changed (JD, SME notes, screening time, or interview time). Regenerating will replace your existing questions with new ones based on the updated inputs.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="gap-3">
+                      <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleGenerate}
+                        className="rounded-xl font-bold bg-primary hover:bg-primary/90"
+                      >
+                        Confirm & Regenerate
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : (
+                <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => refineJd.mutate(jdText)}
-                    disabled={refineJd.isPending || !jdText.trim()}
-                    className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary font-bold gap-2"
+                    onClick={() => setShowGenerateConfirm(true)}
+                    disabled={generateQuestions.isPending || !jdText.trim()}
+                    className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    data-testid="button-generate-questions"
                   >
-                    {refineJd.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Refine with AI
+                    {generateQuestions.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating Rubric...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        {hasExistingQuestions ? "Regenerate Questions" : "Generate Questions"}
+                        <ChevronRight className="w-4 h-4" />
+                      </>
+                    )}
                   </Button>
-                </div>
-                <CardDescription className="text-base font-medium ml-13 mt-2">
-                  Paste the job description (text only). Our AI will generate screening questions and grading rubrics.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-10 pt-0 space-y-6">
-                <div className="relative group">
-                  <Textarea
-                    value={jdText}
-                    onChange={(e) => setJdText(e.target.value)}
-                    placeholder="Paste the full job description here..."
-                    className="min-h-[400px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
-                    data-testid="textarea-jd"
-                  />
-                  {jdText.length === 0 && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-40 group-hover:opacity-60 transition-opacity">
-                      <div className="text-center space-y-4">
-                        <div className="h-16 w-16 rounded-[1.5rem] bg-muted mx-auto flex items-center justify-center">
-                          <FileText className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                        <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Empty Job Description</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6">
-                  <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
-                    <ChevronLeft className="w-4 h-4" />
-                    Back
-                  </Button>
-                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
-                    <Button
-                      onClick={() => {
-                        if (jdText.trim().length < MIN_JD_LENGTH) {
-                          toast({
-                            title: "Job description too short",
-                            description: `Please provide at least ${MIN_JD_LENGTH} characters for a comprehensive job description.`,
-                            variant: "destructive",
-                          });
-                          return;
-                        }
-                        setSetupStep(3);
-                      }}
-                      className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
-                      disabled={!jdText.trim()}
-                    >
-                      Next: SME Notes
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {!generateQuestions.isPending && !refineJd.isPending && setupStep === 3 && (
-            <Card className="rounded-[2.5rem] border-border/40 shadow-xl shadow-primary/5 overflow-hidden bg-card/50 backdrop-blur-sm">
-              <CardHeader className="p-10 pb-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
-                    <Brain className="w-5 h-5 text-primary" />
-                  </div>
-                  <CardTitle className="text-2xl font-black tracking-tight">SME Notes</CardTitle>
-                </div>
-                <CardDescription className="text-base font-medium ml-13">
-                  Add SME expectations (e.g. Head of Tech, Head of Marketing) so the AI generates questions and rubrics that match.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-10 pt-0 space-y-8">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-1 text-primary">
-                    <Info className="w-4 h-4" />
-                    <span className="text-xs font-black uppercase tracking-widest">SME Guidance (Optional)</span>
-                  </div>
-                  <Textarea
-                    value={smeNotes}
-                    onChange={(e) => setSmeNotes(e.target.value)}
-                    placeholder="E.g., 'Focus heavily on architectural decisions' or 'Ask about experience with high-traffic systems'..."
-                    className="min-h-[300px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
-                    data-testid="textarea-sme"
-                  />
-                </div>
-
-                <div className="p-6 rounded-[2rem] bg-primary/[0.03] border border-primary/10 flex items-center gap-6">
-                  <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-7 h-7 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">AI Ready</h4>
-                    <p className="text-sm text-muted-foreground font-medium">Click below to extract competencies and generate tailored rubrics.</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6">
-                  <Button variant="ghost" onClick={() => setSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
-                    <ChevronLeft className="w-4 h-4" />
-                    Back
-                  </Button>
-
-                  {hasExistingQuestions && !hasEdits ? (
-                    <Button
-                      onClick={() => navigate(`/projects/${id}/questions`)}
-                      className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                      data-testid="button-next-step"
-                    >
-                      Next Step
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  ) : hasExistingQuestions && hasEdits ? (
-                    <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
-                      <Button
-                        onClick={() => setShowGenerateConfirm(true)}
-                        disabled={generateQuestions.isPending || !jdText.trim()}
-                        className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                        data-testid="button-regenerate-questions"
+                  <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="text-xl font-black">
+                        {hasExistingQuestions ? "Regenerate Questions?" : "Generate Questions?"}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription className="text-base font-medium">
+                        Candiq AI will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers).
+                        {hasExistingQuestions && " This will replace your existing questions."}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="gap-3">
+                      <AlertDialogCancel className="rounded-xl font-bold">Review Details</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleGenerate}
+                        className="rounded-xl font-bold bg-primary hover:bg-primary/90"
                       >
-                        {generateQuestions.isPending ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Generating Rubric...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4" />
-                            Regenerate
-                            <ChevronRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </Button>
-                      <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle className="text-xl font-black">
-                            Regenerate Questions?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription className="text-base font-medium">
-                            Criteria have changed (JD, SME notes, screening time, or interview time). Regenerating will replace your existing questions with new ones based on the updated inputs.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter className="gap-3">
-                          <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={handleGenerate}
-                            className="rounded-xl font-bold bg-primary hover:bg-primary/90"
-                          >
-                            Confirm & Regenerate
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  ) : (
-                    <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
-                      <Button
-                        onClick={() => setShowGenerateConfirm(true)}
-                        disabled={generateQuestions.isPending || !jdText.trim()}
-                        className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
-                        data-testid="button-generate-questions"
-                      >
-                        {generateQuestions.isPending ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Generating Rubric...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4" />
-                            {hasExistingQuestions ? "Regenerate Questions" : "Generate Questions"}
-                            <ChevronRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </Button>
-                      <AlertDialogContent className="rounded-3xl border-border/40 bg-card/95 backdrop-blur-md">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle className="text-xl font-black">
-                            {hasExistingQuestions ? "Regenerate Questions?" : "Generate Questions?"}
-                          </AlertDialogTitle>
-                          <AlertDialogDescription className="text-base font-medium">
-                            Candiq AI will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers).
-                            {hasExistingQuestions && " This will replace your existing questions."}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter className="gap-3">
-                          <AlertDialogCancel className="rounded-xl font-bold">Review Details</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={handleGenerate}
-                            className="rounded-xl font-bold bg-primary hover:bg-primary/90"
-                          >
-                            Confirm & {hasExistingQuestions ? "Regenerate" : "Generate"}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </main>
-      </div>
-    </DesktopOnlyGuard>
+                        Confirm & {hasExistingQuestions ? "Regenerate" : "Generate"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </ProjectLayout>
   );
 }

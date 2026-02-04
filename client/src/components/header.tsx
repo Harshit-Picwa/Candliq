@@ -23,29 +23,28 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center justify-between gap-4 px-6 max-w-7xl mx-auto">
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-3 group transition-all">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">
-              <Briefcase className="w-4.5 h-4.5 text-primary-foreground stroke-[2.5]" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-xl shadow-primary/25 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+              <Briefcase className="w-5 h-5 text-primary-foreground stroke-[2.5]" />
             </div>
-            <span className="text-xl font-black tracking-tighter bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            <span className="text-2xl font-black tracking-tighter bg-gradient-to-r from-foreground via-foreground to-foreground/50 bg-clip-text text-transparent">
               Candiq.AI
             </span>
           </Link>
-          
+
           {isAuthenticated && (
             <nav className="hidden md:flex items-center gap-2">
               <Link href="/dashboard">
-                <Button 
+                <Button
                   variant="ghost"
                   size="sm"
-                  className={`rounded-lg font-bold transition-all px-4 ${
-                    location === "/dashboard" 
-                      ? "bg-primary/5 text-primary hover:bg-primary/10" 
+                  className={`rounded-lg font-bold transition-all px-4 ${location === "/dashboard"
+                      ? "bg-primary/5 text-primary hover:bg-primary/10"
                       : "text-muted-foreground hover:text-foreground"
-                  }`}
+                    }`}
                   data-testid="link-dashboard"
                 >
                   <LayoutDashboard className="w-4 h-4 mr-2" />
@@ -58,7 +57,7 @@ export function Header() {
 
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          
+
           {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -93,9 +92,9 @@ export function Header() {
                     My Account
                   </DropdownMenuItem>
                 </Link>
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => logout()}
-                  className="flex items-center gap-3 p-3 rounded-lg cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 font-bold transition-all" 
+                  className="flex items-center gap-3 p-3 rounded-lg cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5 font-bold transition-all"
                   data-testid="button-logout"
                 >
                   <div className="h-8 w-8 rounded-lg bg-destructive/10 flex items-center justify-center">

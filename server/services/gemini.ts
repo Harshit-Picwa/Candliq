@@ -11,25 +11,86 @@ function generateId() {
   return Math.random().toString(36).substring(2, 15);
 }
 
+/**
+ * Attempts to repair common JSON errors made by AI models, 
+ * including unquoted keys, single quotes, trailing commas, and unclosed structures.
+ */
 function repairJsonText(input: string) {
   let text = String(input || "").trim();
   if (!text) return text;
 
-  // Strip markdown code fences if present.
-  text = text.replace(/```(?:json)?/gi, "").replace(/```/g, "");
+  // 1. Strip markdown code fences if present.
+  text = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
 
-  // Quote unquoted object keys: { key: ... } or , key:
+  // 2. Extract only the JSON portion if there's surrounding text.
+  const firstBrace = text.indexOf('{');
+  const firstBracket = text.indexOf('[');
+  let startIdx = -1;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) startIdx = firstBrace;
+  else if (firstBracket !== -1) startIdx = firstBracket;
+
+  if (startIdx !== -1) {
+    text = text.substring(startIdx);
+  }
+
+  // 3. Quote unquoted object keys: { key: ... } or , key:
   text = text.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
-  // Convert single-quoted keys to double-quoted keys.
+
+  // 4. Convert single-quoted keys/strings to double-quoted keys.
+  // Be careful not to break internal apostrophes (not a perfect regex but handles simple cases).
   text = text.replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3');
-  // Convert simple single-quoted string values to double-quoted values.
   text = text.replace(/:\s*'([^']*)'/g, (_match, value) => `: "${String(value).replace(/"/g, '\\"')}"`);
 
-  // Remove trailing commas.
+  // 5. Remove trailing commas.
   text = text.replace(/,\s*([}\]])/g, "$1");
 
-  // Normalize common non-JSON literals.
+  // 6. Normalize common non-JSON literals.
   text = text.replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false").replace(/\bNone\b/g, "null");
+
+  // 7. Handle truncated JSON by closing open brackets/braces.
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') openBraces++;
+      if (char === '}') openBraces--;
+      if (char === '[') openBrackets++;
+      if (char === ']') openBrackets--;
+    }
+  }
+
+  // If we are left in a string, close it.
+  if (inString) text += '"';
+
+  // Close open structures in reverse order.
+  // Note: This is an approximation; complex nested truncations might still fail.
+  while (openBraces > 0 || openBrackets > 0) {
+    // We need to guess which one to close. This simple logic closes based on count.
+    // In reality, we'd need a stack of what was opened when.
+    if (openBraces > 0) {
+      text += '}';
+      openBraces--;
+    } else if (openBrackets > 0) {
+      text += ']';
+      openBrackets--;
+    }
+  }
 
   return text;
 }
@@ -43,8 +104,11 @@ function safeJsonParse<T>(jsonText: string, context: string) {
       const parsed = JSON.parse(repaired) as T;
       console.warn(`[gemini] JSON parse failed for ${context}. Repaired and parsed successfully.`);
       return parsed;
-    } catch (_repairError) {
+    } catch (repairError: any) {
       console.error(`[gemini] JSON parse failed for ${context} after repair.`);
+      console.error(`[gemini] Error: ${repairError.message}`);
+      console.error(`[gemini] Original text first 100 chars: ${jsonText.substring(0, 100)}`);
+      console.error(`[gemini] Repaired text last 100 chars: ${repaired.substring(repaired.length - 100)}`);
       throw error;
     }
   }
@@ -619,10 +683,10 @@ Only output valid JSON object. No markdown code blocks.`;
   }
 }
 
-export async function refineJobDescription(jdText: string): Promise<string> {
+export async function refineJobDescription(jdText: string): Promise<{ refinedJd: string, suggestedTitle: string }> {
   const prompt = `You are an expert HR consultant and technical recruiter.
   
-  Your task is to refine the following Job Description (JD). 
+  Your task is to refine the following Job Description (JD) and suggest a standard, concise job title.
   Some users might paste a lot of clutter like company history, benefits, internal administrative details, or legal disclaimers.
   
   Please extract and keep ONLY the relevant job description points, such as:
@@ -635,19 +699,35 @@ export async function refineJobDescription(jdText: string): Promise<string> {
   - Detailed benefits list (insurance, gym memberships, etc)
   - Application instructions or legal disclaimers
   
+  Also, extract a clear, industry-standard JOB TITLE (e.g. "Senior Frontend Engineer", "Product Manager").
+  
   FORMATTING:
-  - Return the refined JD in a clean, bulleted format.
-  - Keep it professional and concise.
+  - Return the results as a JSON object.
+  - refinedJd: The refined JD in a clean, bulleted format.
+  - suggestedTitle: A concise, professional job title.
   
   JOB DESCRIPTION TO REFINE:
   ${jdText}
   
-  Only output the refined job description text. No extra commentary.`;
+  Respond with ONLY a JSON object:
+  {
+    "refinedJd": "...",
+    "suggestedTitle": "..."
+  }
+  
+  Only output valid JSON. No extra commentary.`;
 
   try {
     const { text } = await generateTextWithRetries(prompt);
-    // Remove any markdown code blocks if the AI accidentally adds them
-    return text.replace(/```(?:markdown)?/gi, "").replace(/```/g, "").trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return { refinedJd: text.trim(), suggestedTitle: "" };
+    }
+    const parsed = safeJsonParse<any>(jsonMatch[0], "refined JD and title");
+    return {
+      refinedJd: (parsed.refinedJd || "").trim(),
+      suggestedTitle: (parsed.suggestedTitle || "").trim()
+    };
   } catch (error: any) {
     console.error("[gemini] Refine JD error:", error);
     throw error;
@@ -660,57 +740,69 @@ export async function refineMultipleQuestions(
   instructions: string,
   chatHistory: AIChatMessage[] = []
 ): Promise<{ questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
-  const prompt = `As a subject matter expert, refine the following ${questions.length} screening interview questions based on the custom instructions and the Job Description.
+  const batchSize = 3;
+  const totalQuestions = questions.length;
+  const refinedQuestions: ScreeningQuestion[] = [];
+  let currentHistory = [...chatHistory];
 
-CURRENT QUESTIONS:
-${JSON.stringify(questions, null, 2)}
+  console.log(`[gemini] refining ${totalQuestions} questions in batches of ${batchSize}`);
 
-CUSTOM INSTRUCTIONS:
-${instructions}
+  for (let i = 0; i < totalQuestions; i += batchSize) {
+    const batch = questions.slice(i, i + batchSize);
+    const prompt = `As a subject matter expert, refine the following ${batch.length} screening interview questions based on the custom instructions and the Job Description.
+    
+    JOB DESCRIPTION:
+    ${jdText}
 
-Instructions:
-1. Refine each question text to be more effective, technical, and role-specific. Avoid generic phrasing. Use "technical skills" where appropriate. Focus on technical requirements, responsibilities, and hard skills. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS (e.g. "Do you have any questions for us?").
-2. Update the rubrics (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) for each refined question.
-   - typicalReasoning: A short, declarative paragraph (2–4 sentences): (1) what the question is probing and why it matters, (2) the key concepts a strong answer must address, (3) what good reasoning looks like. Use direct statements ("A strong answer will…", "The ideal response addresses…"). Avoid vague "the candidate should talk about X"; explain what a good answer contains and how it demonstrates competence.
-   - goodSignals: (Best Answer Indicators) - exactly 5 highly specific, explanatory points that describe the 'Best' technical answer. Each signal must be a clear "Listen-for" statement (e.g., "BEST: Explains X using Y terminology").
-   - moderateSignals: (Moderate Answer Indicators) - exactly 5 explanatory points describing an 'Average' answer. Technically correct but lacking depth (e.g., "MODERATE: Mentions X generally").
-   - poorSignals: (Red Flags / Poor Indicators) - exactly 5 clear, explanatory red flags or weak indicators (e.g., "RED FLAG: Suggests X or cannot explain Y").
-   - notes: Specific domain-specific probing questions for the HR person to use if the initial answer is vague.
+    CURRENT QUESTIONS TO REFINE (Batch ${Math.floor(i / batchSize) + 1}):
+    ${JSON.stringify(batch, null, 2)}
 
-CRITICAL: The rubrics must be so precise and descriptive that a recruiter with NO technical knowledge can confidently grade the candidate's answer by mapping their words to these signals. Avoid generic signals like "Good communication" or "Seems knowledgeable". Use specific technical terminology.
-3. Keep the same competencyId and id for each question.
-4. Continue to ensure the refined questions stay within the scope of a standard screening question (approx 2-3 minutes to answer) so they do not disrupt the overall interview timeline.
-5. Respond with a JSON object containing a "questions" array of refined question objects.
+    CUSTOM INSTRUCTIONS:
+    ${instructions}
 
-Respond with ONLY the JSON object. No markdown code blocks.`;
+    Instructions:
+    1. Refine each question text to be more effective, technical, and role-specific. Avoid generic phrasing. Focus on technical requirements, responsibilities, and hard skills. ABSOLUTELY NO CULTURE-FIT, BEHAVIORAL SOFT-SKILLS, OR REVERSE QUESTIONS.
+    2. Update the rubrics (typicalReasoning, goodSignals, moderateSignals, poorSignals, notes) for each refined question.
+       - typicalReasoning: 2–4 sentences explaining what the question probes, key concepts, and good reasoning.
+       - goodSignals/moderateSignals/poorSignals: EXACTLY 5 specific, explanatory points each.
+       - notes: Specific domain-specific probing questions.
+    3. Keep the same competencyId and id for each question.
+    4. Respond with a JSON object containing a "questions" array of refined question objects.
+    
+    Only output valid JSON. No markdown code blocks.`;
 
-  try {
-    const { text, history: updatedHistory } = await sendMessageWithRetries(prompt, chatHistory);
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    try {
+      const { text, history: updatedHistory } = await sendMessageWithRetries(prompt, currentHistory);
+      currentHistory = updatedHistory;
 
-    if (!jsonMatch) {
-      throw new Error("Failed to parse refined questions response");
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error(`Failed to find JSON in batch ${i / batchSize + 1}`);
+      }
+
+      const parsed = safeJsonParse<any>(jsonMatch[0], `refined questions batch ${i / batchSize + 1}`);
+      const refinedBatch = parsed.questions || [];
+
+      for (const refined of refinedBatch) {
+        const original = batch.find(q => q.id === refined.id);
+        if (original) {
+          refinedQuestions.push({
+            ...refined,
+            id: original.id,
+            competencyId: original.competencyId,
+            order: original.order,
+            isMandatory: original.isMandatory,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error(`[gemini] Refine batch ${i / batchSize + 1} error:`, error);
+      // If a batch fails, we could potentially continue, but for now we'll throw to be safe
+      throw error;
     }
-
-    const parsed = safeJsonParse<any>(jsonMatch[0], "refined questions");
-    const refinedBatch = parsed.questions || [];
-
-    const refinedQuestions = refinedBatch.map((refined: any) => {
-      const original = questions.find(q => q.id === refined.id);
-      return {
-        ...refined,
-        id: refined.id,
-        competencyId: refined.competencyId || original?.competencyId,
-        order: refined.order || original?.order,
-        isMandatory: refined.isMandatory ?? original?.isMandatory ?? true,
-      };
-    });
-
-    return { questions: refinedQuestions, history: updatedHistory };
-  } catch (error: any) {
-    console.error("[gemini] Refine multiple questions error:", error);
-    throw error;
   }
+
+  return { questions: refinedQuestions, history: currentHistory };
 }
 
 export async function generateFollowUpSuggestions(

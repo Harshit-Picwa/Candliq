@@ -282,9 +282,9 @@ export async function registerRoutes(
       if (!jdText) return res.status(400).json({ error: "Job description is required" });
 
       console.log(`[refine-jd] Refining JD for project ${req.params.id}`);
-      const refinedJd = await refineJobDescription(jdText);
+      const result = await refineJobDescription(jdText);
 
-      res.json({ refinedJd });
+      res.json(result);
     } catch (error: any) {
       console.error("[refine-jd] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to refine job description", details: error?.message });
