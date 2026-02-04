@@ -1096,3 +1096,137 @@ Only output valid JSON. No markdown code blocks.`;
     };
   }
 }
+
+/**
+ * Analyze screening questions and estimate interview time using Gemini AI.
+ */
+export async function analyzeQuestionTime(
+  questions: ScreeningQuestion[],
+  competencies: Competency[],
+  configuredScreeningTime: number
+): Promise<{
+  totalEstimatedMinutes: number;
+  breakdown: Array<{
+    questionId: string;
+    questionText: string;
+    estimatedMinutes: number;
+    complexity: "simple" | "moderate" | "complex";
+    reasoning: string;
+  }>;
+  summary: string;
+  recommendation: string;
+  withinBudget: boolean;
+}> {
+  const includedQuestions = questions.filter(q => q.isMandatory);
+  
+  if (includedQuestions.length === 0) {
+    return {
+      totalEstimatedMinutes: 0,
+      breakdown: [],
+      summary: "No questions are currently included in the interview.",
+      recommendation: "Add questions to the interview to get a time estimate.",
+      withinBudget: true,
+    };
+  }
+
+  const questionsText = includedQuestions.map((q, i) => {
+    const comp = competencies.find(c => c.id === q.competencyId);
+    return `${i + 1}. [${comp?.name || "General"}] ${q.question}`;
+  }).join("\n");
+
+  const prompt = `You are an expert interview consultant analyzing screening questions for a technical interview.
+
+TASK: Estimate the time needed for each question and provide an analysis.
+
+QUESTIONS TO ANALYZE:
+${questionsText}
+
+CONFIGURED SCREENING TIME: ${configuredScreeningTime} minutes
+
+For each question, estimate:
+- How long it will take for the candidate to think and respond
+- Time for potential follow-up questions
+- Consider question complexity (behavioral vs technical, open-ended vs specific)
+
+Guidelines for time estimation:
+- Simple factual/yes-no questions: 1-2 minutes
+- Moderate behavioral questions: 2-3 minutes  
+- Complex technical/scenario questions: 3-5 minutes
+- Deep-dive architectural questions: 4-6 minutes
+
+Respond with a JSON object:
+{
+  "totalEstimatedMinutes": <number>,
+  "breakdown": [
+    {
+      "questionId": "<question_id>",
+      "questionText": "<first 50 chars of question>...",
+      "estimatedMinutes": <number>,
+      "complexity": "simple" | "moderate" | "complex",
+      "reasoning": "<brief explanation>"
+    }
+  ],
+  "summary": "<2-3 sentence summary of the time analysis>",
+  "recommendation": "<actionable recommendation based on time budget>",
+  "withinBudget": <boolean - true if total <= configured time>
+}
+
+Only output valid JSON. No markdown code blocks.`;
+
+  try {
+    if (!apiKey) {
+      throw new Error("GOOGLE_AI_API_KEY is not set.");
+    }
+
+    const { text } = await generateTextWithRetries(prompt);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      console.error("[gemini] Failed to find JSON in time analysis response");
+      throw new Error("Failed to parse AI response");
+    }
+
+    const parsed = safeJsonParse<any>(jsonMatch[0], "time analysis");
+
+    // Map the breakdown to include actual question IDs
+    const breakdown = (parsed.breakdown || []).map((item: any, idx: number) => ({
+      questionId: includedQuestions[idx]?.id || item.questionId,
+      questionText: item.questionText || includedQuestions[idx]?.question?.substring(0, 50) + "...",
+      estimatedMinutes: Number(item.estimatedMinutes) || 2.5,
+      complexity: item.complexity || "moderate",
+      reasoning: item.reasoning || "Standard interview question",
+    }));
+
+    const totalEstimatedMinutes = breakdown.reduce((sum: number, item: any) => sum + item.estimatedMinutes, 0);
+
+    return {
+      totalEstimatedMinutes: Math.round(totalEstimatedMinutes),
+      breakdown,
+      summary: parsed.summary || `Estimated ${totalEstimatedMinutes} minutes for ${includedQuestions.length} questions.`,
+      recommendation: parsed.recommendation || (totalEstimatedMinutes <= configuredScreeningTime 
+        ? "Time estimate is within your configured budget." 
+        : "Consider removing some questions or increasing screening time."),
+      withinBudget: totalEstimatedMinutes <= configuredScreeningTime,
+    };
+  } catch (error: any) {
+    console.error("[gemini] Time analysis error:", error);
+    
+    // Fallback to simple calculation
+    const fallbackMinutes = includedQuestions.length * 2.5;
+    return {
+      totalEstimatedMinutes: Math.round(fallbackMinutes),
+      breakdown: includedQuestions.map(q => ({
+        questionId: q.id,
+        questionText: q.question.substring(0, 50) + "...",
+        estimatedMinutes: 2.5,
+        complexity: "moderate" as const,
+        reasoning: "Default estimate (AI analysis unavailable)",
+      })),
+      summary: `Estimated ${Math.round(fallbackMinutes)} minutes based on ${includedQuestions.length} questions (default calculation).`,
+      recommendation: fallbackMinutes <= configuredScreeningTime 
+        ? "Time estimate is within your configured budget." 
+        : "Consider adjusting your question set to fit the time budget.",
+      withinBudget: fallbackMinutes <= configuredScreeningTime,
+    };
+  }
+}

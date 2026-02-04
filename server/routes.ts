@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
-import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions, refineJobDescription } from "./services/gemini";
+import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions, refineJobDescription, analyzeQuestionTime } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
 import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project } from "@shared/schema";
 
@@ -295,6 +295,27 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[refine-jd] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to refine job description", details: error?.message });
+    }
+  });
+
+  // Analyze question time using Gemini AI
+  app.post("/api/projects/:id/analyze-time", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(parseInt(req.params.id));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const questions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
+      const competencies = (project.competencyRubricJson || []) as Competency[];
+      const configuredScreeningTime = project.interviewDuration || 15;
+
+      console.log(`[analyze-time] Analyzing ${questions.filter(q => q.isMandatory).length} included questions for project ${req.params.id}`);
+      
+      const analysis = await analyzeQuestionTime(questions, competencies, configuredScreeningTime);
+      
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("[analyze-time] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to analyze question time", details: error?.message });
     }
   });
 

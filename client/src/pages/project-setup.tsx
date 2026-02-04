@@ -57,6 +57,7 @@ export default function ProjectSetupPage() {
   const [triedToAdvance, setTriedToAdvance] = useState(false);
   const initialStepSet = useRef(false);
   const stageSaved = useRef(false);
+  const urlStepRef = useRef<1 | 2 | 3 | null>(null);
 
   const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
   const projectRecord = project as Record<string, unknown> | undefined;
@@ -88,8 +89,9 @@ export default function ProjectSetupPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const stepParam = params.get("step");
-    if (stepParam === "2") setSetupStep(2);
-    if (stepParam === "3") setSetupStep(3);
+    // Capture desired step from URL; actual navigation is validated after we load project data
+    if (stepParam === "2") urlStepRef.current = 2;
+    if (stepParam === "3") urlStepRef.current = 3;
   }, []);
 
   useEffect(() => {
@@ -118,9 +120,44 @@ export default function ProjectSetupPage() {
       // Restore saved setup step on initial load
       if (!initialStepSet.current) {
         const savedStep = p.setupStep as number | undefined;
-        if (savedStep === 1 || savedStep === 2 || savedStep === 3) {
-          setSetupStep(savedStep);
-        }
+
+        const desiredStepFromUrl = urlStepRef.current;
+        const desiredStepFromProject =
+          savedStep === 1 || savedStep === 2 || savedStep === 3 ? savedStep : 1;
+        const desiredStep = desiredStepFromUrl ?? desiredStepFromProject;
+
+        // Validate campaign completeness from PROJECT (not local state, which isn't initialized yet)
+        const projectTotalMinutesRaw = p.totalMinutes ?? p.total_minutes;
+        const projectTotalMinutesNum =
+          projectTotalMinutesRaw != null && projectTotalMinutesRaw !== ""
+            ? Number(projectTotalMinutesRaw)
+            : NaN;
+        const projectTotalInterviewTimeMissing = Number.isNaN(projectTotalMinutesNum) || projectTotalMinutesNum <= 0;
+        const projectTitleMissing = !(project.title || "").trim();
+        const projectInterviewDurationRaw = p.interviewDuration ?? p.interview_duration;
+        const projectInterviewDurationNum =
+          projectInterviewDurationRaw != null && projectInterviewDurationRaw !== ""
+            ? Number(projectInterviewDurationRaw)
+            : NaN;
+        const projectScreeningTimeMissing = Number.isNaN(projectInterviewDurationNum) || projectInterviewDurationNum <= 0;
+        const projectCompanyWebsiteMissing = !((p.companyWebsite as string) || "").trim();
+        const projectLocCity = (p.locationCity as string) || (p.location_city as string) || "";
+        const projectLocState = (p.locationState as string) || (p.location_state as string) || "";
+        const projectLocCountry = (p.locationCountry as string) || (p.location_country as string) || "";
+        const projectLocationMissing = !(projectLocCity.trim() || projectLocState.trim() || projectLocCountry.trim());
+
+        const campaignIncompleteFromProject =
+          projectTitleMissing ||
+          projectTotalInterviewTimeMissing ||
+          projectScreeningTimeMissing ||
+          projectCompanyWebsiteMissing ||
+          projectLocationMissing;
+
+        // If Campaign Settings are incomplete, always force user to step 1
+        setSetupStep(campaignIncompleteFromProject && desiredStep !== 1 ? 1 : desiredStep);
+
+        // URL step only applies once
+        urlStepRef.current = null;
         initialStepSet.current = true;
       }
     }
@@ -143,6 +180,17 @@ export default function ProjectSetupPage() {
   
   // Helper to change step and persist
   const changeSetupStep = (step: 1 | 2 | 3) => {
+    // Prevent leaving Campaign Settings until required fields are complete
+    if (setupStep === 1 && step !== 1 && isCampaignSettingsIncomplete) {
+      setTriedToAdvance(true);
+      toast({
+        title: "Complete required fields",
+        description:
+          "Please fill in all Campaign Settings: Project Title, Total Interview Time, Screening Time, Company Website, and Location.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSetupStep(step);
     saveSetupStep.mutate(step);
   };

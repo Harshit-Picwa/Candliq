@@ -21,7 +21,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
-import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, Settings, Brain, X, MapPin, Calendar } from "lucide-react";
+import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, Settings, Brain, X, MapPin, Calendar, Clock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -111,9 +121,50 @@ export default function QuestionsSetupPage() {
   const [isRefiningIndividual, setIsRefiningIndividual] = useState(false);
   const [selectedForRefine, setSelectedForRefine] = useState<Set<string>>(new Set());
   const [isRefiningSelected, setIsRefiningSelected] = useState(false);
+  const [showReviewConfirmModal, setShowReviewConfirmModal] = useState(false);
+  const [timeAnalysis, setTimeAnalysis] = useState<{
+    totalEstimatedMinutes: number;
+    breakdown: Array<{
+      questionId: string;
+      questionText: string;
+      estimatedMinutes: number;
+      complexity: "simple" | "moderate" | "complex";
+      reasoning: string;
+    }>;
+    summary: string;
+    recommendation: string;
+    withinBudget: boolean;
+  } | null>(null);
 
   const initialStepSet = useRef(false);
   const stageSaved = useRef(false);
+  
+  // Basic calculation for display (AI analysis will override when loaded)
+  const MINUTES_PER_QUESTION = 2.5;
+  const includedQuestionsCount = questions.filter(q => q.isMandatory).length;
+  const estimatedMinutes = timeAnalysis?.totalEstimatedMinutes || Math.round(includedQuestionsCount * MINUTES_PER_QUESTION);
+  const configuredScreeningTime = (project as any)?.interviewDuration || 0;
+  
+  // Mutation to fetch AI time analysis
+  const analyzeTime = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/projects/${id}/analyze-time`);
+    },
+    onSuccess: (data) => {
+      setTimeAnalysis(data as any);
+    },
+    onError: (error) => {
+      console.error("[analyzeTime] Error:", error);
+      // Fallback to basic calculation
+      setTimeAnalysis({
+        totalEstimatedMinutes: Math.round(includedQuestionsCount * MINUTES_PER_QUESTION),
+        breakdown: [],
+        summary: `Estimated ${Math.round(includedQuestionsCount * MINUTES_PER_QUESTION)} minutes for ${includedQuestionsCount} questions.`,
+        recommendation: "AI analysis unavailable. Using default estimates.",
+        withinBudget: Math.round(includedQuestionsCount * MINUTES_PER_QUESTION) <= configuredScreeningTime,
+      });
+    },
+  });
   
   useEffect(() => {
     if (project) {
@@ -370,8 +421,10 @@ export default function QuestionsSetupPage() {
 
   const handleContinueToReview = () => {
     if (!validateAllQuestions()) return;
-    changeStep("review");
-    setSelectedQuestionId(null);
+    // Trigger AI analysis and show confirmation modal
+    setTimeAnalysis(null); // Reset previous analysis
+    analyzeTime.mutate();
+    setShowReviewConfirmModal(true);
   };
 
   const selectedQuestion = selectedQuestionId
@@ -402,7 +455,13 @@ export default function QuestionsSetupPage() {
       stageDescription="Stage 2: Refine questions, review rubrics, then approve to go live"
       onStageClick={(s) => {
         if (s === 1) navigate(`/projects/${id}`);
-        if (s === 2) changeStep("review");
+        if (s === 2 && step !== "review") {
+          if (!validateAllQuestions()) return;
+          // Trigger AI analysis and show confirmation modal
+          setTimeAnalysis(null);
+          analyzeTime.mutate();
+          setShowReviewConfirmModal(true);
+        }
         if (s === 3) navigate(`/projects/${id}/interviews`);
       }}
       clickableStages={isLocked ? [2, 3] : [1, 2, 3]}
@@ -528,43 +587,69 @@ export default function QuestionsSetupPage() {
         </div>
       }
       subNavigation={
-        <div className="relative flex items-center bg-muted/30 backdrop-blur-xl p-1.5 rounded-2xl border border-border/40 shadow-xl shadow-black/5 ring-1 ring-white/10">
-          {[
-            { stepId: "edit" as const, label: "Refine Criteria", icon: Edit },
-            { stepId: "review" as const, label: "Review & Approve", icon: ShieldCheck },
-          ].map(({ stepId, label, icon: Icon }, i) => {
-            const isActive = isLocked ? stepId === "review" : step === stepId;
-            const isDisabled = isLocked 
-              ? stepId === "edit" 
-              : stepId === "review" && (invalidQuestionIds.size > 0 || questionCount === 0);
-            return (
-              <div key={stepId} className="relative flex-1 min-w-[180px]">
-                <button
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => {
-                    if (isLocked && stepId === "edit") return;
-                    if (stepId === "review" && !validateAllQuestions()) return;
-                    changeStep(stepId);
-                  }}
-                  className={`relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-xl text-xs font-black transition-all w-full justify-center uppercase tracking-widest whitespace-nowrap ${isActive
-                    ? "text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                    }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 transition-all ${isActive ? "scale-110" : "opacity-60"}`} />
-                  <span className="whitespace-nowrap">{label}</span>
-                </button>
-                {isActive && (
-                  <motion.div
-                    layoutId="active-nav-pill"
-                    className="absolute inset-0 bg-primary rounded-xl shadow-lg shadow-primary/25 z-0"
-                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-              </div>
-            );
-          })}
+        <div className="flex flex-col items-center gap-3">
+          {/* Tab navigation */}
+          <div className="relative flex items-center bg-muted/30 backdrop-blur-xl p-1.5 rounded-2xl border border-border/40 shadow-xl shadow-black/5 ring-1 ring-white/10">
+            {[
+              { stepId: "edit" as const, label: "Refine Criteria", icon: Edit },
+              { stepId: "review" as const, label: "Review & Approve", icon: ShieldCheck },
+            ].map(({ stepId, label, icon: Icon }, i) => {
+              const isActive = isLocked ? stepId === "review" : step === stepId;
+              const isDisabled = isLocked 
+                ? stepId === "edit" 
+                : stepId === "review" && (invalidQuestionIds.size > 0 || questionCount === 0);
+              return (
+                <div key={stepId} className="relative flex-1 min-w-[180px]">
+                  <button
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => {
+                      if (isLocked && stepId === "edit") return;
+                      if (stepId === "review") {
+                        if (!validateAllQuestions()) return;
+                        // Trigger AI analysis and show confirmation modal
+                        setTimeAnalysis(null);
+                        analyzeTime.mutate();
+                        setShowReviewConfirmModal(true);
+                        return;
+                      }
+                      changeStep(stepId);
+                    }}
+                    className={`relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-xl text-xs font-black transition-all w-full justify-center uppercase tracking-widest whitespace-nowrap ${isActive
+                      ? "text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                      }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 transition-all ${isActive ? "scale-110" : "opacity-60"}`} />
+                    <span className="whitespace-nowrap">{label}</span>
+                  </button>
+                  {isActive && (
+                    <motion.div
+                      layoutId="active-nav-pill"
+                      className="absolute inset-0 bg-primary rounded-xl shadow-lg shadow-primary/25 z-0"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Time estimate badge - below tabs */}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/5 border border-primary/10">
+            <Clock className="w-4 h-4 text-primary" />
+            <span className="text-xs font-bold text-primary">
+              {includedQuestionsCount} Q × {MINUTES_PER_QUESTION} min = <span className="text-sm">{estimatedMinutes} min</span>
+            </span>
+            {configuredScreeningTime > 0 && (
+              <span className={cn(
+                "text-xs font-medium ml-1",
+                estimatedMinutes > configuredScreeningTime ? "text-amber-600" : "text-green-600"
+              )}>
+                / {configuredScreeningTime} min configured
+              </span>
+            )}
+          </div>
         </div>
       }
     >
@@ -659,6 +744,18 @@ export default function QuestionsSetupPage() {
                                       )}
                                       <p className="font-extrabold text-lg text-foreground/90 leading-relaxed pr-6 flex-1">{q.question}</p>
                                     </div>
+                                    
+                                    {/* AI Insight & Notes */}
+                                    {q.rubric.notes && (
+                                      <div className="mt-6 p-4 rounded-xl bg-primary/5 border border-primary/10">
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 mb-2">
+                                          <Sparkles className="w-3.5 h-3.5" /> AI Insight & Notes
+                                        </h4>
+                                        <p className="text-sm font-medium text-foreground/70 italic leading-relaxed">
+                                          "{q.rubric.notes}"
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="p-8 space-y-8">
                                     <div className="space-y-4">
@@ -1211,6 +1308,136 @@ export default function QuestionsSetupPage() {
           </div>
         ) : null
       )}
+      {/* Confirmation Modal for Review & Approve with AI Analysis */}
+      <AlertDialog open={showReviewConfirmModal} onOpenChange={setShowReviewConfirmModal}>
+        <AlertDialogContent className="rounded-2xl max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-black flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              AI Time Analysis
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                {analyzeTime.isPending ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground font-medium">Analyzing questions with AI...</p>
+                  </div>
+                ) : timeAnalysis ? (
+                  (() => {
+                    const aiEstimatedMinutes = timeAnalysis.totalEstimatedMinutes || Math.round(includedQuestionsCount * MINUTES_PER_QUESTION);
+                    const isWithinBudget = timeAnalysis.withinBudget ?? (aiEstimatedMinutes <= configuredScreeningTime);
+                    const overBudgetBy = Math.max(0, aiEstimatedMinutes - configuredScreeningTime);
+                    
+                    return (
+                      <>
+                        {/* Time Summary */}
+                        <div className={cn(
+                          "flex items-center gap-3 p-4 rounded-xl border",
+                          isWithinBudget 
+                            ? "bg-green-500/5 border-green-500/20" 
+                            : "bg-amber-500/5 border-amber-500/20"
+                        )}>
+                          <Clock className={cn("w-6 h-6", isWithinBudget ? "text-green-600" : "text-amber-600")} />
+                          <div className="flex-1">
+                            <p className="font-bold text-foreground text-lg">
+                              {aiEstimatedMinutes} min estimated
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              for {includedQuestionsCount} included questions
+                            </p>
+                            {configuredScreeningTime > 0 && (
+                              <p className={cn(
+                                "text-sm mt-1 font-medium",
+                                isWithinBudget ? "text-green-600" : "text-amber-600"
+                              )}>
+                                {isWithinBudget 
+                                  ? `✓ Within your ${configuredScreeningTime} min budget`
+                                  : `⚠️ Exceeds your ${configuredScreeningTime} min budget by ${overBudgetBy} min`
+                                }
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* AI Summary */}
+                        {timeAnalysis.summary && (
+                          <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
+                            <p className="text-sm text-foreground font-medium">{timeAnalysis.summary}</p>
+                          </div>
+                        )}
+
+                        {/* Question Breakdown (collapsible) */}
+                        {timeAnalysis.breakdown && timeAnalysis.breakdown.length > 0 && (
+                          <details className="group">
+                            <summary className="text-xs font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-2">
+                              <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                              View breakdown by question
+                            </summary>
+                            <div className="mt-3 space-y-2 max-h-[200px] overflow-y-auto">
+                              {timeAnalysis.breakdown.map((item, idx) => (
+                                <div key={item.questionId || idx} className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-border/20 text-xs">
+                                  <span className={cn(
+                                    "shrink-0 px-1.5 py-0.5 rounded font-bold uppercase",
+                                    item.complexity === "simple" ? "bg-green-500/10 text-green-600" :
+                                    item.complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
+                                    "bg-blue-500/10 text-blue-600"
+                                  )}>
+                                    {item.estimatedMinutes || 2.5}m
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-foreground/80 truncate">{item.questionText || "Question"}</p>
+                                    {item.reasoning && <p className="text-muted-foreground text-[10px] mt-0.5">{item.reasoning}</p>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+
+                        {/* AI Recommendation */}
+                        {timeAnalysis.recommendation && (
+                          <div className="p-3 rounded-xl bg-primary/5 border border-primary/10">
+                            <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">AI Recommendation</p>
+                            <p className="text-sm text-foreground">{timeAnalysis.recommendation}</p>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/10">
+                    <Clock className="w-5 h-5 text-primary" />
+                    <div>
+                      <p className="font-bold text-foreground">
+                        {includedQuestionsCount} questions × ~{MINUTES_PER_QUESTION} min = ~{Math.round(includedQuestionsCount * MINUTES_PER_QUESTION)} min
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-muted-foreground text-sm">
+                  Are you ready to proceed to Review & Approve?
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              className="rounded-xl font-bold"
+              disabled={analyzeTime.isPending}
+              onClick={() => {
+                setShowReviewConfirmModal(false);
+                changeStep("review");
+                setSelectedQuestionId(null);
+              }}
+            >
+              Yes, Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ProjectLayout>
   );
 }
