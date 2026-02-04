@@ -12,6 +12,57 @@ function generateId() {
 }
 
 /**
+ * Extract the first balanced JSON object/array from text.
+ * This avoids greedy regex grabs when the model includes extra braces/text.
+ */
+function extractJsonSubstring(input: string) {
+  const text = String(input || "");
+  const firstBrace = text.indexOf("{");
+  const firstBracket = text.indexOf("[");
+  let startIdx = -1;
+
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) startIdx = firstBrace;
+  else if (firstBracket !== -1) startIdx = firstBracket;
+  if (startIdx === -1) return text.trim();
+
+  const stack: Array<"{" | "["> = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === "{") stack.push("{");
+    else if (ch === "[") stack.push("[");
+    else if (ch === "}") {
+      if (stack[stack.length - 1] === "{") stack.pop();
+    } else if (ch === "]") {
+      if (stack[stack.length - 1] === "[") stack.pop();
+    }
+
+    if (stack.length === 0) {
+      return text.substring(startIdx, i + 1).trim();
+    }
+  }
+
+  // Truncated JSON; return from the first bracket to end (repairJsonText may close it).
+  return text.substring(startIdx).trim();
+}
+
+/**
  * Attempts to repair common JSON errors made by AI models, 
  * including unquoted keys, single quotes, trailing commas, and unclosed structures.
  */
@@ -19,22 +70,27 @@ function repairJsonText(input: string) {
   let text = String(input || "").trim();
   if (!text) return text;
 
+  // 0. Normalize “smart quotes” to ASCII quotes.
+  text = text
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+
   // 1. Strip markdown code fences if present.
   text = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
 
-  // 2. Extract only the JSON portion if there's surrounding text.
-  const firstBrace = text.indexOf('{');
-  const firstBracket = text.indexOf('[');
-  let startIdx = -1;
-  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) startIdx = firstBrace;
-  else if (firstBracket !== -1) startIdx = firstBracket;
+  // 2. Extract only the first balanced JSON chunk.
+  text = extractJsonSubstring(text);
 
-  if (startIdx !== -1) {
-    text = text.substring(startIdx);
-  }
+  // 2b. Remove JS-style comments that sometimes appear in model output.
+  text = text.replace(/\/\*[\s\S]*?\*\//g, "");
+  text = text.replace(/^\s*\/\/.*$/gm, "");
 
   // 3. Quote unquoted object keys: { key: ... } or , key:
-  text = text.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+  // Also handles keys with spaces/hyphens (e.g., good signals, question-id).
+  text = text.replace(
+    /([{,]\s*)([A-Za-z_][A-Za-z0-9_\- ]*?)(\s*:)/g,
+    (_m, prefix, key, suffix) => `${prefix}"${String(key).trim()}"${suffix}`
+  );
 
   // 4. Convert single-quoted keys/strings to double-quoted keys.
   // Be careful not to break internal apostrophes (not a perfect regex but handles simple cases).
@@ -96,10 +152,11 @@ function repairJsonText(input: string) {
 }
 
 function safeJsonParse<T>(jsonText: string, context: string) {
+  const extracted = extractJsonSubstring(jsonText);
   try {
-    return JSON.parse(jsonText) as T;
+    return JSON.parse(extracted) as T;
   } catch (error) {
-    const repaired = repairJsonText(jsonText);
+    const repaired = repairJsonText(extracted);
     try {
       const parsed = JSON.parse(repaired) as T;
       console.warn(`[gemini] JSON parse failed for ${context}. Repaired and parsed successfully.`);
@@ -107,7 +164,7 @@ function safeJsonParse<T>(jsonText: string, context: string) {
     } catch (repairError: any) {
       console.error(`[gemini] JSON parse failed for ${context} after repair.`);
       console.error(`[gemini] Error: ${repairError.message}`);
-      console.error(`[gemini] Original text first 100 chars: ${jsonText.substring(0, 100)}`);
+      console.error(`[gemini] Original text first 100 chars: ${extracted.substring(0, 100)}`);
       console.error(`[gemini] Repaired text last 100 chars: ${repaired.substring(repaired.length - 100)}`);
       throw error;
     }

@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions, refineJobDescription, analyzeQuestionTime } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
-import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project } from "@shared/schema";
+import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project, Competency } from "@shared/schema";
 
 // Extend Express.User type to include our user properties
 declare global {
