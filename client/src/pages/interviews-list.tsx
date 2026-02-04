@@ -239,7 +239,7 @@ export default function InterviewsListPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence mode="popLayout">
               {interviews.map((interview, index) => {
-                const status = interview.isCompleted ? "completed" : interview.transcription ? "in-progress" : "draft";
+                const status = interview.status === "completed" ? "completed" : (interview.transcriptJson?.length ? "in-progress" : "draft");
                 return (
                   <motion.div
                     key={interview.id}
