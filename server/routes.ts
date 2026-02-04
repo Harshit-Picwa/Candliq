@@ -48,6 +48,7 @@ export async function registerRoutes(
     try {
       const project = await storage.getProject(parseInt(req.params.id));
       if (!project) return res.status(404).json({ error: "Project not found" });
+      console.log("[get-project] ID:", req.params.id, "Status:", project.status, "QuestionsStep:", (project as any).questionsStep);
       res.json(project);
     } catch (error) {
       console.error("Error fetching project:", error);
@@ -100,6 +101,8 @@ export async function registerRoutes(
         "totalMinutes",
         "screeningQuestionsJson",
         "competencyRubricJson",
+        "status",
+        "questionsStep",
       ] as const;
       const payload: Record<string, unknown> = {};
       for (const k of allowed) {
@@ -107,8 +110,10 @@ export async function registerRoutes(
           payload[k] = body[k];
         }
       }
+      console.log("[patch-project] ID:", req.params.id, "Payload:", { status: payload.status, questionsStep: payload.questionsStep });
       const project = await storage.updateProject(parseInt(req.params.id), payload as any);
       if (!project) return res.status(404).json({ error: "Project not found" });
+      console.log("[patch-project] Updated project:", { status: project.status, questionsStep: (project as any).questionsStep });
       res.json(project);
     } catch (error) {
       console.error("Error updating project:", error);

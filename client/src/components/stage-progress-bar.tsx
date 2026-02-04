@@ -24,7 +24,7 @@ const STAGES = [
   },
   {
     stage: 3 as const,
-    label: "Ready",
+    label: "Interviews",
     sublabel: "Scale hiring",
     icon: Rocket,
   },

@@ -97,7 +97,9 @@ export default function QuestionsSetupPage() {
   const [customInstructions, setCustomInstructions] = useState("");
   const [editedQuestionIds, setEditedQuestionIds] = useState<Set<string>>(new Set());
   const [approved, setApproved] = useState(false);
+  const [editModeAfterApproval, setEditModeAfterApproval] = useState(false);
   const [step, setStep] = useState<"edit" | "review" | "launch">("edit");
+  const isLocked = approved && !editModeAfterApproval;
   const invalidQuestionIds = useMemo(() => {
     const invalidIds = questions
       .filter((q) => !((q?.question ?? "").trim()))
@@ -110,6 +112,8 @@ export default function QuestionsSetupPage() {
   const [selectedForRefine, setSelectedForRefine] = useState<Set<string>>(new Set());
   const [isRefiningSelected, setIsRefiningSelected] = useState(false);
 
+  const initialStepSet = useRef(false);
+  
   useEffect(() => {
     if (project) {
       const loadedQuestions = project.screeningQuestionsJson || [];
@@ -118,14 +122,38 @@ export default function QuestionsSetupPage() {
       setCompetencies(loadedCompetencies);
       setSelectedQuestionId(null);
       setEditedQuestionIds(new Set());
+      setApproved(project.status === "questions_approved");
+      
+      // On initial load, restore the saved step or default based on status
+      if (!initialStepSet.current) {
+        console.log("[useEffect] Loading project - status:", project.status, "questionsStep:", project.questionsStep);
+        if (project.questionsStep === "edit" || project.questionsStep === "review") {
+          console.log("[useEffect] Setting step from saved:", project.questionsStep);
+          setStep(project.questionsStep);
+        } else if (project.status === "questions_approved") {
+          console.log("[useEffect] Setting step to review (approved project)");
+          setStep("review");
+        }
+        initialStepSet.current = true;
+      }
     }
   }, [project]);
+  
+  // Save step to server when it changes
+  const saveStep = useMutation({
+    mutationFn: async (newStep: "edit" | "review") => {
+      return apiRequest("PATCH", `/api/projects/${id}`, {
+        questionsStep: newStep,
+      });
+    },
+  });
 
   const saveQuestions = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (statusOverride?: string) => {
       return apiRequest("PATCH", `/api/projects/${id}`, {
         screeningQuestionsJson: questions,
         competencyRubricJson: competencies,
+        status: statusOverride ?? "draft",
       });
     },
     onSuccess: () => {
@@ -301,23 +329,36 @@ export default function QuestionsSetupPage() {
       return;
     }
     setApproved(true);
+    setEditModeAfterApproval(false);
+
+    saveQuestions.mutate("questions_approved");
+
     toast({
       title: "Project Ready!",
       description: "Your screening criteria are finalized. You can now add candidates.",
     });
-    navigate(`/projects/${id}/interviews`);
   };
 
   const handleSave = () => {
     if (!validateAllQuestions()) {
       return;
     }
-    saveQuestions.mutate();
+    saveQuestions.mutate("draft");
+  };
+
+  // Helper to change step and persist to server
+  const changeStep = (newStep: "edit" | "review") => {
+    console.log("[changeStep] Changing to:", newStep);
+    setStep(newStep);
+    saveStep.mutate(newStep, {
+      onSuccess: () => console.log("[changeStep] Saved successfully:", newStep),
+      onError: (err) => console.error("[changeStep] Save failed:", err),
+    });
   };
 
   const handleContinueToReview = () => {
     if (!validateAllQuestions()) return;
-    setStep("review");
+    changeStep("review");
     setSelectedQuestionId(null);
   };
 
@@ -349,14 +390,70 @@ export default function QuestionsSetupPage() {
       stageDescription="Stage 2: Refine questions, review rubrics, then approve to go live"
       onStageClick={(s) => {
         if (s === 1) navigate(`/projects/${id}`);
-        if (s === 2) setStep("review");
+        if (s === 2) changeStep("review");
         if (s === 3) navigate(`/projects/${id}/interviews`);
       }}
-      clickableStages={[1, 2, 3]}
+      clickableStages={isLocked ? [2, 3] : [1, 2, 3]}
       questionCount={questionCount}
       actions={
         <div className="flex items-center gap-2">
-          {step === "edit" ? (
+          {isLocked ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setApproved(false);
+                  setEditModeAfterApproval(true);
+                  changeStep("edit");
+                }}
+                className="rounded-xl gap-2 border-border/60"
+                data-testid="button-edit-questions"
+              >
+                <Edit className="w-4 h-4" />
+                Edit
+              </Button>
+              <Button
+                variant="default"
+                asChild
+                className="rounded-xl gap-2 px-8 font-bold shadow-lg shadow-primary/25 bg-primary"
+              >
+                <Link href={`/projects/${id}/interviews`}>
+                  View Interviews
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
+              </Button>
+            </>
+          ) : approved && editModeAfterApproval && step === "edit" ? (
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditModeAfterApproval(false);
+                  changeStep("review");
+                }}
+                className="rounded-xl mr-2 text-muted-foreground hover:text-foreground"
+              >
+                Done
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
+                variant="outline"
+                className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm"
+              >
+                {saveQuestions.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Settings className="w-4 h-4 mr-2 text-muted-foreground" />}
+                Save Draft
+              </Button>
+              <Button
+                onClick={handleContinueToReview}
+                disabled={questionCount === 0 || invalidQuestionIds.size > 0}
+                className="rounded-xl gap-2 shadow-lg shadow-primary/20 px-6 font-semibold"
+              >
+                Next Step
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </>
+          ) : step === "edit" ? (
             <>
               <Button
                 onClick={handleSave}
@@ -386,7 +483,7 @@ export default function QuestionsSetupPage() {
             <>
               <Button
                 variant="ghost"
-                onClick={() => setStep("edit")}
+                onClick={() => changeStep("edit")}
                 className="rounded-xl mr-2 text-muted-foreground hover:text-foreground"
               >
                 <ChevronLeft className="w-4 h-4 mr-1" />
@@ -421,32 +518,39 @@ export default function QuestionsSetupPage() {
           {[
             { stepId: "edit" as const, label: "Refine Criteria", icon: Edit },
             { stepId: "review" as const, label: "Review & Approve", icon: ShieldCheck },
-          ].map(({ stepId, label, icon: Icon }, i) => (
-            <div key={stepId} className="relative flex-1 min-w-[180px]">
-              <button
-                type="button"
-                disabled={stepId === "review" && (invalidQuestionIds.size > 0 || questionCount === 0)}
-                onClick={() => {
-                  if (stepId === "review" && !validateAllQuestions()) return;
-                  setStep(stepId);
-                }}
-                className={`relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-xl text-xs font-black transition-all w-full justify-center uppercase tracking-widest whitespace-nowrap ${step === stepId
-                  ? "text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent"
-                  }`}
-              >
-                <Icon className={`w-3.5 h-3.5 transition-all ${step === stepId ? "scale-110" : "opacity-60"}`} />
-                <span className="whitespace-nowrap">{label}</span>
-              </button>
-              {step === stepId && (
-                <motion.div
-                  layoutId="active-nav-pill"
-                  className="absolute inset-0 bg-primary rounded-xl shadow-lg shadow-primary/25 z-0"
-                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                />
-              )}
-            </div>
-          ))}
+          ].map(({ stepId, label, icon: Icon }, i) => {
+            const isActive = isLocked ? stepId === "review" : step === stepId;
+            const isDisabled = isLocked 
+              ? stepId === "edit" 
+              : stepId === "review" && (invalidQuestionIds.size > 0 || questionCount === 0);
+            return (
+              <div key={stepId} className="relative flex-1 min-w-[180px]">
+                <button
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => {
+                    if (isLocked && stepId === "edit") return;
+                    if (stepId === "review" && !validateAllQuestions()) return;
+                    changeStep(stepId);
+                  }}
+                  className={`relative z-10 flex items-center gap-2.5 px-6 py-3 rounded-xl text-xs font-black transition-all w-full justify-center uppercase tracking-widest whitespace-nowrap ${isActive
+                    ? "text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                    }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 transition-all ${isActive ? "scale-110" : "opacity-60"}`} />
+                  <span className="whitespace-nowrap">{label}</span>
+                </button>
+                {isActive && (
+                  <motion.div
+                    layoutId="active-nav-pill"
+                    className="absolute inset-0 bg-primary rounded-xl shadow-lg shadow-primary/25 z-0"
+                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       }
     >
@@ -492,7 +596,7 @@ export default function QuestionsSetupPage() {
               </Button>
             </div>
           </Card>
-        ) : step === "review" ? (
+        ) : (step === "review" || isLocked) ? (
           <div className="grid gap-12 pb-20 max-w-4xl mx-auto">
             {[
               { sectionTitle: "Included in interview", sectionSubtitle: `${includedCount} question(s)`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
@@ -525,12 +629,22 @@ export default function QuestionsSetupPage() {
                         </div>
 
                         <div className="grid gap-4">
-                          {compQuestions.map((q) => {
+                          {compQuestions.map((q, qIdx) => {
+                            const questionNo = sectionTitle === "Included in interview"
+                              ? grouped.slice(0, idx).reduce((sum, g) => sum + g.questions.length, 0) + qIdx + 1
+                              : null;
                             return (
                               <Card key={q.id} className="rounded-[2rem] border-border/40 shadow-xl shadow-black/5 overflow-hidden transition-all duration-500 hover:shadow-2xl hover:shadow-primary/5 group/card bg-card/60 backdrop-blur-sm">
                                 <CardContent className="p-0">
                                   <div className="p-8 bg-gradient-to-br from-background to-muted/20 border-b border-border/40">
-                                    <p className="font-extrabold text-lg text-foreground/90 leading-relaxed pr-6">{q.question}</p>
+                                    <div className="flex items-start gap-3">
+                                      {questionNo != null && (
+                                        <span className="shrink-0 h-8 w-8 rounded-xl bg-primary/15 text-primary font-black text-sm flex items-center justify-center border border-primary/20">
+                                          Q{questionNo}
+                                        </span>
+                                      )}
+                                      <p className="font-extrabold text-lg text-foreground/90 leading-relaxed pr-6 flex-1">{q.question}</p>
+                                    </div>
                                   </div>
                                   <div className="p-8 space-y-8">
                                     <div className="space-y-4">
@@ -590,25 +704,29 @@ export default function QuestionsSetupPage() {
                                     </div>
                                   </div>
                                   <div
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => toggleMandatory(q.id)}
-                                    onKeyDown={(e) => e.key === "Enter" && toggleMandatory(q.id)}
-                                    className="px-8 py-5 bg-muted/40 border-t border-border/40 flex items-center justify-between group/toggle"
+                                    role={isLocked ? undefined : "button"}
+                                    tabIndex={isLocked ? undefined : 0}
+                                    onClick={isLocked ? undefined : () => toggleMandatory(q.id)}
+                                    onKeyDown={isLocked ? undefined : (e) => e.key === "Enter" && toggleMandatory(q.id)}
+                                    className={cn("px-8 py-5 bg-muted/40 border-t border-border/40 flex items-center justify-between", !isLocked && "group/toggle cursor-pointer")}
                                   >
                                     <div className="flex items-center gap-3">
                                       <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center transition-all", q.isMandatory ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
                                         <ShieldCheck className="w-3.5 h-3.5" />
                                       </div>
-                                      <span className={cn("text-sm font-black uppercase tracking-wider transition-colors", q.isMandatory ? "text-primary" : "text-muted-foreground group-hover/toggle:text-foreground text-opacity-60")}>
+                                      <span className={cn("text-sm font-black uppercase tracking-wider", q.isMandatory ? "text-primary" : "text-muted-foreground", !isLocked && "transition-colors group-hover/toggle:text-foreground text-opacity-60")}>
                                         {q.isMandatory ? "Included for interview" : "Excluded"}
                                       </span>
                                     </div>
-                                    <Checkbox
-                                      checked={q.isMandatory}
-                                      onCheckedChange={() => toggleMandatory(q.id)}
-                                      className="h-6 w-6 rounded-lg border-2 border-border/60 data-[state=checked]:bg-primary data-[state=checked]:border-primary transition-all duration-300 transform active:scale-90"
-                                    />
+                                    {isLocked ? (
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Locked</span>
+                                    ) : (
+                                      <Checkbox
+                                        checked={q.isMandatory}
+                                        onCheckedChange={() => toggleMandatory(q.id)}
+                                        className="h-6 w-6 rounded-lg border-2 border-border/60 data-[state=checked]:bg-primary data-[state=checked]:border-primary transition-all duration-300 transform active:scale-90"
+                                      />
+                                    )}
                                   </div>
                                 </CardContent>
                               </Card>
@@ -622,7 +740,7 @@ export default function QuestionsSetupPage() {
               );
             })}
           </div>
-        ) : (
+        ) : !isLocked ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             <div className="lg:col-span-6 lg:sticky lg:top-4">
               <div className="flex flex-col h-[calc(100vh-140px)] space-y-6">
@@ -1068,7 +1186,7 @@ export default function QuestionsSetupPage() {
               </Card>
             </div>
           </div>
-        )
+        ) : null
       )}
     </ProjectLayout>
   );

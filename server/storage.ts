@@ -11,6 +11,7 @@ import type {
 function toProject(row: { aiChatHistory?: unknown;[key: string]: unknown }): Project {
   const { aiChatHistory, ...rest } = row;
   // Handle potential case mismatches between DB/Prisma row and the Project type
+  // 'status' is included in 'rest' and matches the Project type directly
   const result = { ...rest, aiChatHistoryJson: aiChatHistory ?? null } as any;
 
   if (result.total_minutes !== undefined && result.totalMinutes === undefined) {
@@ -108,6 +109,8 @@ export class DatabaseStorage implements IStorage {
     if (Object.prototype.hasOwnProperty.call(raw, "screeningQuestionsJson")) payload.screeningQuestionsJson = raw.screeningQuestionsJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "aiChatHistoryJson")) payload.aiChatHistory = raw.aiChatHistoryJson as Prisma.InputJsonValue;
+    if (Object.prototype.hasOwnProperty.call(raw, "status")) (payload as any).status = raw.status as string;
+    if (Object.prototype.hasOwnProperty.call(raw, "questionsStep")) (payload as any).questionsStep = raw.questionsStep as string | null;
 
     // Prisma only accepts camelCase totalMinutes; ensure snake_case never reaches it
     const payloadData = payload as Record<string, unknown>;

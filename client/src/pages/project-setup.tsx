@@ -192,6 +192,16 @@ export default function ProjectSetupPage() {
     interviewDuration > totalMinutes;
 
   const isTotalInterviewTimeMissing = totalMinutes === "" || totalMinutes === undefined || (typeof totalMinutes === "number" && totalMinutes <= 0);
+  const isTitleMissing = !title.trim();
+  const isScreeningTimeMissing = interviewDuration === "" || interviewDuration === undefined || (typeof interviewDuration === "number" && interviewDuration <= 0);
+  const isCompanyWebsiteMissing = !companyWebsite.trim();
+  const isLocationMissing = !location || (!(location?.city?.trim()) && !(location?.state?.trim()) && !(location?.country?.trim()));
+  const isCampaignSettingsIncomplete =
+    isTitleMissing ||
+    isTotalInterviewTimeMissing ||
+    isScreeningTimeMissing ||
+    isCompanyWebsiteMissing ||
+    isLocationMissing;
 
   const getTotalMinutesForApi = (): number | undefined => {
     if (typeof totalMinutes === "number" && totalMinutes > 0) return totalMinutes;
@@ -217,10 +227,10 @@ export default function ProjectSetupPage() {
 
   const handleNextToJobDescription = async () => {
     setTriedToAdvance(true);
-    if (isTotalInterviewTimeMissing) {
+    if (isCampaignSettingsIncomplete) {
       toast({
-        title: "Total Interview Time required",
-        description: "Please enter the total interview time (minutes) before continuing.",
+        title: "Complete required fields",
+        description: "Please fill in all Campaign Settings: Project Title, Total Interview Time, Screening Time, Company Website, and Location.",
         variant: "destructive",
       });
       return;
@@ -242,10 +252,10 @@ export default function ProjectSetupPage() {
   };
 
   const handleSave = () => {
-    if (isTotalInterviewTimeMissing) {
+    if (isCampaignSettingsIncomplete) {
       toast({
-        title: "Total Interview Time required",
-        description: "Please enter the total interview time (minutes) before saving.",
+        title: "Complete required fields",
+        description: "Please fill in all Campaign Settings before saving.",
         variant: "destructive",
       });
       return;
@@ -433,15 +443,25 @@ export default function ProjectSetupPage() {
           <CardContent className="p-10 pt-0 space-y-8">
             <div className="grid gap-8">
               <div className="space-y-3">
-                <Label htmlFor="project-title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Project Title</Label>
+                <Label htmlFor="project-title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
+                  Project Title
+                  <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="project-title"
+                  required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Senior Frontend Engineer"
-                  className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                  className={cn("h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isTitleMissing && "border-destructive/70 ring-1 ring-destructive/20")}
                   data-testid="input-project-title"
                 />
+                {triedToAdvance && isTitleMissing && (
+                  <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                    <Info className="w-3.5 h-3.5" />
+                    Required.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -481,10 +501,13 @@ export default function ProjectSetupPage() {
                   <Label htmlFor="interview-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                     <Clock className="w-3 h-3" />
                     Total Screening Time (min)
+                    <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="interview-duration"
                     type="number"
+                    min={1}
+                    required
                     value={interviewDuration}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -495,8 +518,18 @@ export default function ProjectSetupPage() {
                       setInterviewDuration(parseInt(val) || 0);
                     }}
                     placeholder="e.g. 15"
-                    className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${isScreeningExceedsInterview ? "border-destructive ring-1 ring-destructive/30" : ""}`}
+                    className={cn(
+                      "h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5",
+                      (triedToAdvance && isScreeningTimeMissing) && "border-destructive/70 ring-1 ring-destructive/20",
+                      isScreeningExceedsInterview && "border-destructive ring-1 ring-destructive/30"
+                    )}
                   />
+                  {triedToAdvance && isScreeningTimeMissing && (
+                    <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                      <Info className="w-3.5 h-3.5" />
+                      Required. Enter screening time in minutes.
+                    </p>
+                  )}
                   {isScreeningExceedsInterview && (
                     <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
                       <Info className="w-3.5 h-3.5" />
@@ -510,20 +543,29 @@ export default function ProjectSetupPage() {
                 <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                   <Globe className="w-3 h-3" />
                   Company Website
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="company-website"
                   type="url"
+                  required
                   value={companyWebsite}
                   onChange={(e) => setCompanyWebsite(e.target.value)}
                   placeholder="https://company.com"
-                  className="h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                  className={cn("h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isCompanyWebsiteMissing && "border-destructive/70 ring-1 ring-destructive/20")}
                 />
+                {triedToAdvance && isCompanyWebsiteMissing && (
+                  <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                    <Info className="w-3.5 h-3.5" />
+                    Required.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-3">
-                <Label htmlFor="location" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">
+                <Label htmlFor="location" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                   Location
+                  <span className="text-destructive">*</span>
                 </Label>
                 <LocationCombobox
                   id="location"
@@ -531,7 +573,14 @@ export default function ProjectSetupPage() {
                   onChange={setLocation}
                   placeholder="City, State, Country (Australia & NZ)"
                   data-testid="input-location"
+                  className={triedToAdvance && isLocationMissing ? "border-destructive/70 ring-1 ring-destructive/20" : undefined}
                 />
+                {triedToAdvance && isLocationMissing && (
+                  <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
+                    <Info className="w-3.5 h-3.5" />
+                    Required.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -642,7 +691,7 @@ export default function ProjectSetupPage() {
               <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Brain className="w-5 h-5 text-primary" />
               </div>
-              <CardTitle className="text-2xl font-black tracking-tight">SME Notes</CardTitle>
+              <CardTitle className="text-2xl font-black tracking-tight">Subject Matter Expert Notes</CardTitle>
             </div>
             <CardDescription className="text-base font-medium ml-13">
               Add SME expectations (e.g. Head of Tech, Head of Marketing) so the AI generates questions and rubrics that match.

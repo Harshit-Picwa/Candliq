@@ -28,6 +28,8 @@ export const projects = pgTable("projects", {
   totalMinutes: integer("total_minutes"),
   competencyRubricJson: jsonb("competency_rubric_json").$type<Competency[]>(),
   screeningQuestionsJson: jsonb("screening_questions_json").$type<ScreeningQuestion[]>(),
+  status: text("status").notNull().default("draft"),
+  questionsStep: text("questions_step"), // Current step in questions setup: "edit" or "review"
   aiChatHistoryJson: jsonb("ai_chat_history").$type<AIChatMessage[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

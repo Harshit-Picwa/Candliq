@@ -3,7 +3,7 @@ import { Header } from "./header";
 import { DesktopOnlyGuard } from "./desktop-only-guard";
 import { StageProgressBar } from "./stage-progress-bar";
 import { Button } from "./ui/button";
-import { ArrowLeft, MapPin, Calendar } from "lucide-react";
+import { ArrowLeft, MapPin, Calendar, Clock, MessageSquare } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -108,6 +108,26 @@ export function ProjectLayout({
                                                 <span>{format(new Date(project.createdAt), "MMM d, yyyy")}</span>
                                             </div>
                                         )}
+                                        {(() => {
+                                            const totalMins = project.totalMinutes ?? (project as { total_minutes?: number }).total_minutes;
+                                            const screeningMins = project.interviewDuration ?? (project as { interview_duration?: number }).interview_duration;
+                                            return (
+                                                <>
+                                                    {totalMins != null && (
+                                                        <div className="flex items-center gap-2 bg-muted/40 px-2.5 py-1 rounded-lg border border-border/40">
+                                                            <Clock className="w-3.5 h-3.5 text-muted-foreground/60" />
+                                                            <span>{totalMins} min total</span>
+                                                        </div>
+                                                    )}
+                                                    {screeningMins != null && (
+                                                        <div className="flex items-center gap-2 bg-muted/40 px-2.5 py-1 rounded-lg border border-border/40">
+                                                            <MessageSquare className="w-3.5 h-3.5 text-muted-foreground/60" />
+                                                            <span>{screeningMins} min screening</span>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </motion.div>
                                 )}
                             </div>
