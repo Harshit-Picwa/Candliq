@@ -102,6 +102,8 @@ export async function registerRoutes(
         "screeningQuestionsJson",
         "competencyRubricJson",
         "status",
+        "currentStage",
+        "setupStep",
         "questionsStep",
       ] as const;
       const payload: Record<string, unknown> = {};

@@ -58,6 +58,8 @@ model Project {
   competencyRubricJson  Json?     @map("competency_rubric_json") @db.JsonB
   screeningQuestionsJson Json?    @map("screening_questions_json") @db.JsonB
   status                 String    @default("draft")
+  currentStage          Int?      @map("current_stage") // Current main stage: 1=Setup, 2=Questions, 3=Interviews
+  setupStep             Int?      @map("setup_step") // Current step in project setup: 1, 2, or 3
   questionsStep         String?   @map("questions_step") // Current step in questions setup: "edit" or "review"
   aiChatHistory         Json?    @map("ai_chat_history") @db.JsonB
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp

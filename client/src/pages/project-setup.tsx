@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
@@ -55,6 +55,7 @@ export default function ProjectSetupPage() {
   const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [triedToAdvance, setTriedToAdvance] = useState(false);
+  const initialStepSet = useRef(false);
 
   const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
   const projectRecord = project as Record<string, unknown> | undefined;
@@ -112,8 +113,30 @@ export default function ProjectSetupPage() {
       const totalRaw = p.totalMinutes ?? p.total_minutes;
       const totalNum = totalRaw != null && totalRaw !== "" ? Number(totalRaw) : NaN;
       setTotalMinutes(!Number.isNaN(totalNum) && totalNum >= 0 ? totalNum : "");
+      
+      // Restore saved setup step on initial load
+      if (!initialStepSet.current) {
+        const savedStep = p.setupStep as number | undefined;
+        if (savedStep === 1 || savedStep === 2 || savedStep === 3) {
+          setSetupStep(savedStep);
+        }
+        initialStepSet.current = true;
+      }
     }
   }, [project]);
+  
+  // Save setup step to server
+  const saveSetupStep = useMutation({
+    mutationFn: async (step: 1 | 2 | 3) => {
+      return apiRequest("PATCH", `/api/projects/${id}`, { setupStep: step, currentStage: 1 });
+    },
+  });
+  
+  // Helper to change step and persist
+  const changeSetupStep = (step: 1 | 2 | 3) => {
+    setSetupStep(step);
+    saveSetupStep.mutate(step);
+  };
 
   const updateProject = useMutation({
     mutationFn: async (data: Partial<Project>) => {
@@ -245,7 +268,7 @@ export default function ProjectSetupPage() {
     }
     try {
       await saveCampaignFields();
-      setSetupStep(2);
+      changeSetupStep(2);
     } catch {
       // Error toast already from mutation
     }
@@ -303,7 +326,7 @@ export default function ProjectSetupPage() {
         description: `Please provide at least ${MIN_JD_LENGTH} characters for the job description to ensure AI can generate quality questions.`,
         variant: "destructive"
       });
-      setSetupStep(2);
+      changeSetupStep(2);
       return;
     }
 
@@ -313,7 +336,7 @@ export default function ProjectSetupPage() {
         description: `Please provide at least ${MIN_SME_LENGTH} characters for your instructions, or leave them blank if you don't have specific requirements.`,
         variant: "destructive"
       });
-      setSetupStep(3);
+      changeSetupStep(3);
       return;
     }
 
@@ -394,7 +417,7 @@ export default function ProjectSetupPage() {
             <div key={stepId} className="flex-1 relative">
               <button
                 type="button"
-                onClick={() => setSetupStep(stepId)}
+                onClick={() => changeSetupStep(stepId)}
                 className={`relative z-10 flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-black transition-all w-full justify-center uppercase tracking-widest whitespace-nowrap ${setupStep === stepId
                   ? "text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-white/5"
@@ -655,7 +678,7 @@ export default function ProjectSetupPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6">
-              <Button variant="ghost" onClick={() => setSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
+              <Button variant="ghost" onClick={() => changeSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
                 <ChevronLeft className="w-4 h-4" />
                 Back
               </Button>
@@ -670,7 +693,7 @@ export default function ProjectSetupPage() {
                       });
                       return;
                     }
-                    setSetupStep(3);
+                    changeSetupStep(3);
                   }}
                   className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
                   disabled={!jdText.trim()}
@@ -723,7 +746,7 @@ export default function ProjectSetupPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6">
-              <Button variant="ghost" onClick={() => setSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
+              <Button variant="ghost" onClick={() => changeSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
                 <ChevronLeft className="w-4 h-4" />
                 Back
               </Button>

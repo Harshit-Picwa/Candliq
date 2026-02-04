@@ -110,6 +110,8 @@ export class DatabaseStorage implements IStorage {
     if (Object.prototype.hasOwnProperty.call(raw, "competencyRubricJson")) payload.competencyRubricJson = raw.competencyRubricJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "aiChatHistoryJson")) payload.aiChatHistory = raw.aiChatHistoryJson as Prisma.InputJsonValue;
     if (Object.prototype.hasOwnProperty.call(raw, "status")) (payload as any).status = raw.status as string;
+    if (Object.prototype.hasOwnProperty.call(raw, "currentStage")) (payload as any).currentStage = raw.currentStage as number | null;
+    if (Object.prototype.hasOwnProperty.call(raw, "setupStep")) (payload as any).setupStep = raw.setupStep as number | null;
     if (Object.prototype.hasOwnProperty.call(raw, "questionsStep")) (payload as any).questionsStep = raw.questionsStep as string | null;
 
     // Prisma only accepts camelCase totalMinutes; ensure snake_case never reaches it

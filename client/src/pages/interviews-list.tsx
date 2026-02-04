@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -77,6 +77,15 @@ export default function InterviewsListPage() {
   const { data: interviews, isLoading: interviewsLoading } = useQuery<Interview[]>({
     queryKey: ["/api/projects", projectId, "interviews"],
   });
+
+  // Save currentStage: 3 when visiting interviews page
+  const stageSaved = useRef(false);
+  useEffect(() => {
+    if (project && !stageSaved.current) {
+      apiRequest("PATCH", `/api/projects/${projectId}`, { currentStage: 3 });
+      stageSaved.current = true;
+    }
+  }, [project, projectId]);
 
   const createInterview = useMutation({
     mutationFn: async (data: { candidateName: string; candidateEmail: string }) => {

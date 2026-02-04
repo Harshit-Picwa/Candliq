@@ -215,7 +215,14 @@ export default function DashboardPage() {
                   data-testid={`card-project-${project.id}`}
                 >
                   <Link
-                    href={(project.screeningQuestionsJson?.length || 0) > 0 ? `/projects/${project.id}/questions` : `/projects/${project.id}`}
+                    href={
+                      // Navigate to saved stage, or default based on project progress
+                      (project as any).currentStage === 3
+                        ? `/projects/${project.id}/interviews`
+                        : (project as any).currentStage === 2 || (project.screeningQuestionsJson?.length || 0) > 0
+                          ? `/projects/${project.id}/questions`
+                          : `/projects/${project.id}`
+                    }
                     className="absolute inset-0 z-10"
                   />
                   <div className="absolute top-6 right-6 z-20" onClick={(e) => e.stopPropagation()}>

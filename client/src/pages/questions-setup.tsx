@@ -120,7 +120,9 @@ export default function QuestionsSetupPage() {
       const loadedCompetencies = project.competencyRubricJson || [];
       setQuestions(loadedQuestions);
       setCompetencies(loadedCompetencies);
-      setSelectedQuestionId(null);
+      // Select first question by default so rubric shows immediately
+      const firstQuestion = loadedQuestions[0];
+      setSelectedQuestionId(firstQuestion?.id || null);
       setEditedQuestionIds(new Set());
       setApproved(project.status === "questions_approved");
       
@@ -144,6 +146,7 @@ export default function QuestionsSetupPage() {
     mutationFn: async (newStep: "edit" | "review") => {
       return apiRequest("PATCH", `/api/projects/${id}`, {
         questionsStep: newStep,
+        currentStage: 2,
       });
     },
   });
@@ -405,6 +408,8 @@ export default function QuestionsSetupPage() {
                   setApproved(false);
                   setEditModeAfterApproval(true);
                   changeStep("edit");
+                  // Also save status as draft so it stays unlocked after refresh
+                  apiRequest("PATCH", `/api/projects/${id}`, { status: "draft" });
                 }}
                 className="rounded-xl gap-2 border-border/60"
                 data-testid="button-edit-questions"
@@ -1021,7 +1026,7 @@ export default function QuestionsSetupPage() {
                                             </Tooltip>
                                           </TooltipProvider>
 
-                                          <div className="flex items-center gap-2">
+                                          <div className="flex items-center gap-3">
                                             {!editedQuestionIds.has(question.id) ? (
                                               <Badge
                                                 variant="outline"
@@ -1040,6 +1045,15 @@ export default function QuestionsSetupPage() {
                                                 <Edit className="w-3 h-3" /> User Edited
                                               </Badge>
                                             )}
+                                            <span 
+                                              className={`text-xs font-semibold transition-colors cursor-pointer ${selectedQuestionId === question.id ? "text-primary" : "text-primary/60 hover:text-primary"}`}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedQuestionId(question.id);
+                                              }}
+                                            >
+                                              scoring rubric →
+                                            </span>
                                           </div>
                                         </div>
                                       </div>
