@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, serial, integer, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-
 // Re-export auth models
 export * from "./models/auth";
 
@@ -77,6 +76,8 @@ export interface ScreeningQuestion {
   id: string;
   competencyId: string;
   question: string;
+  complexity?: "simple" | "moderate" | "complex";
+  estimatedMinutes?: number;
   rubric: QuestionRubric;
   isMandatory: boolean;
   order: number;

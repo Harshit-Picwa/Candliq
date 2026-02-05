@@ -58,7 +58,11 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
       </div>
 
       <TooltipProvider>
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="relative flex items-center gap-1 sm:gap-2">
+          <div
+            className="pointer-events-none absolute left-0 right-0 top-1/2 hidden h-px -translate-y-1/2 bg-border/30 sm:block"
+            aria-hidden
+          />
           {STAGES.map(({ stage, label, sublabel, icon: Icon }, i) => {
             const isComplete = currentStage > stage;
             const isCurrent = currentStage === stage;
@@ -70,7 +74,7 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
                 whileHover={isClickable ? { scale: 1.02 } : {}}
                 whileTap={isClickable ? { scale: 0.98 } : {}}
                 className={cn(
-                  "relative flex items-center gap-2 sm:gap-3 rounded-2xl px-3 py-2 sm:px-5 sm:py-3 border transition-all min-w-0 flex-1 overflow-hidden",
+                  "relative z-10 flex items-center gap-2 sm:gap-3 rounded-2xl px-2 py-1.5 sm:px-4 sm:py-2.5 border transition-all min-w-0 flex-1 overflow-hidden",
                   isComplete && "bg-primary/[0.03] border-primary/20 text-primary shadow-sm",
                   isCurrent && "bg-primary text-primary-foreground border-primary shadow-xl shadow-primary/20",
                   !isComplete && !isCurrent && "bg-muted/30 border-border/50 text-muted-foreground/60",
@@ -139,7 +143,7 @@ export function StageProgressBar({ currentStage, className, onStageClick, clicka
                   pill
                 )}
                 {i < STAGES.length - 1 && (
-                  <div className="hidden lg:block w-px h-6 bg-border/20 mx-2" aria-hidden />
+                  <div className="hidden lg:block w-px h-6 bg-border/20 mx-1" aria-hidden />
                 )}
               </div>
             );

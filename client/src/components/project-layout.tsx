@@ -3,8 +3,7 @@ import { Header } from "./header";
 import { DesktopOnlyGuard } from "./desktop-only-guard";
 import { StageProgressBar } from "./stage-progress-bar";
 import { Button } from "./ui/button";
-import { ArrowLeft, MapPin, Calendar, Clock, MessageSquare } from "lucide-react";
-import { Link } from "wouter";
+import { MapPin, Calendar, Clock, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Project } from "@shared/schema";
@@ -19,7 +18,6 @@ interface ProjectLayoutProps {
     onStageClick: (stage: 1 | 2 | 3) => void;
     clickableStages?: (1 | 2 | 3)[];
     actions?: ReactNode;
-    backHref?: string;
     subNavigation?: ReactNode;
     questionCount?: number;
 }
@@ -33,7 +31,6 @@ export function ProjectLayout({
     onStageClick,
     clickableStages,
     actions,
-    backHref = "/dashboard",
     subNavigation,
     questionCount
 }: ProjectLayoutProps) {
@@ -74,11 +71,6 @@ export function ProjectLayout({
                     {/* Project Title and Header Actions */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
                         <div className="flex items-center gap-4">
-                            <Button variant="ghost" size="icon" asChild className="rounded-full hover:bg-background/80 shadow-sm border border-border/40 transition-transform active:scale-90">
-                                <Link href={backHref}>
-                                    <ArrowLeft className="w-5 h-5" />
-                                </Link>
-                            </Button>
                             <div className="flex-1">
                                 <motion.h1
                                     initial={{ opacity: 0, x: -10 }}

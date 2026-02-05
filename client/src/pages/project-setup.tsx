@@ -26,9 +26,10 @@ import { StageProgressBar } from "@/components/stage-progress-bar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, Settings, User, Globe, Clock, Info, Edit, MapPin, Calendar } from "lucide-react";
+import { ArrowLeft, FileText, Brain, Loader2, Sparkles, ChevronRight, ChevronLeft, X, Settings, User, Globe, Clock, Info, Edit, MapPin, Calendar, Eye, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { LocationCombobox, type LocationValue } from "@/components/location-combobox";
+import { JobTitleInput } from "@/components/job-title-input";
 import { ProjectLayout } from "@/components/project-layout";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -40,6 +41,14 @@ export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  
+  // Check if we're in preview/review mode
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setIsPreviewMode(params.get("preview") === "true");
+  }, []);
 
   const { data: project, isLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -186,7 +195,7 @@ export default function ProjectSetupPage() {
       toast({
         title: "Complete required fields",
         description:
-          "Please fill in all Campaign Settings: Project Title, Total Interview Time, Screening Time, Company Website, and Location.",
+          "Please fill in all Campaign Settings: Role Title, Total Interview Time, Screening Time, Company Website, and Location.",
         variant: "destructive",
       });
       return;
@@ -310,7 +319,7 @@ export default function ProjectSetupPage() {
     if (isCampaignSettingsIncomplete) {
       toast({
         title: "Complete required fields",
-        description: "Please fill in all Campaign Settings: Project Title, Total Interview Time, Screening Time, Company Website, and Location.",
+        description: "Please fill in all Campaign Settings: Role Title, Total Interview Time, Screening Time, Company Website, and Location.",
         variant: "destructive",
       });
       return;
@@ -444,25 +453,50 @@ export default function ProjectSetupPage() {
     );
   }
 
+  // Exit preview mode and go back to dashboard
+  const exitPreviewMode = () => {
+    navigate("/dashboard");
+  };
+
   return (
     <ProjectLayout
       project={project}
       isLoading={isLoading}
       currentStage={1}
-      stageDescription="Stage 1: Enter JD and SME notes, then generate questions"
+      stageDescription={isPreviewMode ? "Preview Mode - Review project details" : "Stage 1: Enter JD and SME notes, then generate questions"}
       onStageClick={(stage) => {
         if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions`);
       }}
       clickableStages={hasExistingQuestions ? [2] : []}
       actions={
-        <Button onClick={handleSave} disabled={updateProject.isPending || isTotalInterviewTimeMissing} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
-          {updateProject.isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
-          )}
-          Save Changes
-        </Button>
+        isPreviewMode ? (
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              onClick={exitPreviewMode}
+              className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Exit Preview
+            </Button>
+            <Button 
+              onClick={() => navigate(`/projects/${id}`)}
+              className="rounded-xl shadow-sm"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Project
+            </Button>
+          </div>
+        ) : (
+          <Button onClick={handleSave} disabled={updateProject.isPending || isTotalInterviewTimeMissing} variant="outline" className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm" data-testid="button-save">
+            {updateProject.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Settings className="w-4 h-4 mr-2 text-muted-foreground" />
+            )}
+            Save Changes
+          </Button>
+        )
       }
       subNavigation={
         <div className="relative flex items-center w-full max-w-2xl bg-muted/30 backdrop-blur-xl p-1.5 rounded-[1.25rem] border border-border/40 shadow-xl shadow-black/5 ring-1 ring-white/10">
@@ -495,6 +529,25 @@ export default function ProjectSetupPage() {
         </div>
       }
     >
+      {/* Preview Mode Banner */}
+      {isPreviewMode && (
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-blue-500/20">
+              <Eye className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-foreground">Preview Mode</h3>
+              <p className="text-xs text-muted-foreground">Viewing project details in read-only mode</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Step {setupStep} of 3</span>
+            <span className="text-blue-500">•</span>
+            <span>Use Accept to continue</span>
+          </div>
+        </div>
+      )}
 
       {/* Progress card while questions are being generated (after confirm) */}
       {generateQuestions.isPending && (
@@ -506,8 +559,8 @@ export default function ProjectSetupPage() {
       )}
 
       {!generateQuestions.isPending && !refineJd.isPending && setupStep === 1 && (
-        <Card className="rounded-[2.5rem] border-border/40 shadow-2xl shadow-primary/5 overflow-hidden bg-card/40 backdrop-blur-xl ring-1 ring-white/5">
-          <CardHeader className="p-10 pb-6 relative overflow-hidden">
+        <Card className="rounded-[2.5rem] border-border/40 shadow-2xl shadow-primary/5 bg-card/40 backdrop-blur-xl ring-1 ring-white/5">
+          <CardHeader className="p-10 pb-6 relative">
             <div className="flex items-center gap-4 mb-3">
               <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner ring-1 ring-primary/20">
                 <Settings className="w-6 h-6 text-primary" />
@@ -522,19 +575,19 @@ export default function ProjectSetupPage() {
           </CardHeader>
           <CardContent className="p-10 pt-0 space-y-8">
             <div className="grid gap-8">
-              <div className="space-y-3">
+              <div className="space-y-3 relative" style={{ zIndex: 101 }}>
                 <Label htmlFor="project-title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
-                  Project Title
+                  Role Title
                   <span className="text-destructive">*</span>
                 </Label>
-                <Input
+                <JobTitleInput
                   id="project-title"
-                  required
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={setTitle}
                   placeholder="e.g. Senior Frontend Engineer"
                   className={cn("h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isTitleMissing && "border-destructive/70 ring-1 ring-destructive/20")}
                   data-testid="input-project-title"
+                  disabled={isPreviewMode}
                 />
                 {triedToAdvance && isTitleMissing && (
                   <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
@@ -556,6 +609,7 @@ export default function ProjectSetupPage() {
                     type="number"
                     min={1}
                     required
+                    disabled={isPreviewMode}
                     value={totalMinutes === "" || totalMinutes === undefined ? "" : totalMinutes}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -567,7 +621,7 @@ export default function ProjectSetupPage() {
                       setTotalMinutes(Number.isNaN(num) ? "" : num);
                     }}
                     placeholder="e.g. 45"
-                    className={`h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5 ${triedToAdvance && isTotalInterviewTimeMissing ? "border-destructive/70 ring-1 ring-destructive/20" : ""}`}
+                    className={cn("h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isTotalInterviewTimeMissing && "border-destructive/70 ring-1 ring-destructive/20", isPreviewMode && "cursor-not-allowed opacity-70")}
                   />
                   {triedToAdvance && isTotalInterviewTimeMissing && (
                     <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
@@ -588,6 +642,7 @@ export default function ProjectSetupPage() {
                     type="number"
                     min={1}
                     required
+                    disabled={isPreviewMode}
                     value={interviewDuration}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -601,7 +656,8 @@ export default function ProjectSetupPage() {
                     className={cn(
                       "h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5",
                       (triedToAdvance && isScreeningTimeMissing) && "border-destructive/70 ring-1 ring-destructive/20",
-                      isScreeningExceedsInterview && "border-destructive ring-1 ring-destructive/30"
+                      isScreeningExceedsInterview && "border-destructive ring-1 ring-destructive/30",
+                      isPreviewMode && "cursor-not-allowed opacity-70"
                     )}
                   />
                   {triedToAdvance && isScreeningTimeMissing && (
@@ -629,10 +685,11 @@ export default function ProjectSetupPage() {
                   id="company-website"
                   type="url"
                   required
+                  disabled={isPreviewMode}
                   value={companyWebsite}
                   onChange={(e) => setCompanyWebsite(e.target.value)}
                   placeholder="https://company.com"
-                  className={cn("h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isCompanyWebsiteMissing && "border-destructive/70 ring-1 ring-destructive/20")}
+                  className={cn("h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isCompanyWebsiteMissing && "border-destructive/70 ring-1 ring-destructive/20", isPreviewMode && "cursor-not-allowed opacity-70")}
                 />
                 {triedToAdvance && isCompanyWebsiteMissing && (
                   <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
@@ -642,7 +699,7 @@ export default function ProjectSetupPage() {
                 )}
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 relative" style={{ zIndex: 100 }}>
                 <Label htmlFor="location" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                   Location
                   <span className="text-destructive">*</span>
@@ -651,8 +708,9 @@ export default function ProjectSetupPage() {
                   id="location"
                   value={location}
                   onChange={setLocation}
-                  placeholder="City, State, Country (Australia & NZ)"
+                  placeholder="Search city worldwide..."
                   data-testid="input-location"
+                  disabled={isPreviewMode}
                   className={triedToAdvance && isLocationMissing ? "border-destructive/70 ring-1 ring-destructive/20" : undefined}
                 />
                 {triedToAdvance && isLocationMissing && (
@@ -665,24 +723,35 @@ export default function ProjectSetupPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-6">
-              <Button
-                onClick={handleNextToJobDescription}
-                disabled={updateProject.isPending}
-                className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto"
-                data-testid="button-next-job-description"
-              >
-                {updateProject.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    Next: Job Description
-                    <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
-              </Button>
+              {isPreviewMode ? (
+                <Button
+                  onClick={() => setSetupStep(2)}
+                  className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto bg-green-600 hover:bg-green-700"
+                >
+                  <Check className="w-4 h-4" />
+                  Accept & Continue
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleNextToJobDescription}
+                  disabled={updateProject.isPending}
+                  className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 w-full sm:w-auto"
+                  data-testid="button-next-job-description"
+                >
+                  {updateProject.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      Next: Job Description
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -698,16 +767,18 @@ export default function ProjectSetupPage() {
                 </div>
                 <CardTitle className="text-2xl font-black tracking-tight">Job Description</CardTitle>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refineJd.mutate(jdText)}
-                disabled={refineJd.isPending || !jdText.trim()}
-                className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary font-bold gap-2"
-              >
-                {refineJd.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                Refine with AI
-              </Button>
+              {!isPreviewMode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refineJd.mutate(jdText)}
+                  disabled={refineJd.isPending || !jdText.trim()}
+                  className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary font-bold gap-2"
+                >
+                  {refineJd.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  Refine with AI
+                </Button>
+              )}
             </div>
             <CardDescription className="text-base font-medium ml-13 mt-2">
               Paste the job description (text only). Our AI will generate screening questions and grading rubrics.
@@ -719,7 +790,8 @@ export default function ProjectSetupPage() {
                 value={jdText}
                 onChange={(e) => setJdText(e.target.value)}
                 placeholder="Paste the full job description here..."
-                className="min-h-[400px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
+                readOnly={isPreviewMode}
+                className={cn("min-h-[400px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed", isPreviewMode && "cursor-not-allowed opacity-70")}
                 data-testid="textarea-jd"
               />
               {jdText.length === 0 && (
@@ -735,29 +807,40 @@ export default function ProjectSetupPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6">
-              <Button variant="ghost" onClick={() => changeSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
+              <Button variant="ghost" onClick={() => isPreviewMode ? setSetupStep(1) : changeSetupStep(1)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto order-2 sm:order-1" data-testid="button-back-step-2">
                 <ChevronLeft className="w-4 h-4" />
                 Back
               </Button>
               <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
-                <Button
-                  onClick={() => {
-                    if (jdText.trim().length < MIN_JD_LENGTH) {
-                      toast({
-                        title: "Job description too short",
-                        description: `Please provide at least ${MIN_JD_LENGTH} characters for a comprehensive job description.`,
-                        variant: "destructive",
-                      });
-                      return;
-                    }
-                    changeSetupStep(3);
-                  }}
-                  className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
-                  disabled={!jdText.trim()}
-                >
-                  Next: SME Notes
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
+                {isPreviewMode ? (
+                  <Button
+                    onClick={() => setSetupStep(3)}
+                    className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12 bg-green-600 hover:bg-green-700"
+                  >
+                    <Check className="w-4 h-4" />
+                    Accept & Continue
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      if (jdText.trim().length < MIN_JD_LENGTH) {
+                        toast({
+                          title: "Job description too short",
+                          description: `Please provide at least ${MIN_JD_LENGTH} characters for a comprehensive job description.`,
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      changeSetupStep(3);
+                    }}
+                    className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
+                    disabled={!jdText.trim()}
+                  >
+                    Next: SME Notes
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -783,28 +866,39 @@ export default function ProjectSetupPage() {
                 value={smeNotes}
                 onChange={(e) => setSmeNotes(e.target.value)}
                 placeholder="E.g., 'Focus heavily on architectural decisions' or 'Ask about experience with high-traffic systems'..."
-                className="min-h-[300px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed"
+                readOnly={isPreviewMode}
+                className={cn("min-h-[300px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed", isPreviewMode && "cursor-not-allowed opacity-70")}
                 data-testid="textarea-sme"
               />
             </div>
 
-            <div className="p-6 rounded-[2rem] bg-primary/[0.03] border border-primary/10 flex items-center gap-6">
-              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-                <Sparkles className="w-7 h-7 text-primary" />
+            {!isPreviewMode && (
+              <div className="p-6 rounded-[2rem] bg-primary/[0.03] border border-primary/10 flex items-center gap-6">
+                <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-7 h-7 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">AI Ready</h4>
+                  <p className="text-sm text-muted-foreground font-medium">Click below to extract competencies and generate tailored rubrics.</p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">AI Ready</h4>
-                <p className="text-sm text-muted-foreground font-medium">Click below to extract competencies and generate tailored rubrics.</p>
-              </div>
-            </div>
+            )}
 
             <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6">
-              <Button variant="ghost" onClick={() => changeSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
+              <Button variant="ghost" onClick={() => isPreviewMode ? setSetupStep(2) : changeSetupStep(2)} className="rounded-xl font-bold h-12 px-6 gap-2 w-full sm:w-auto" data-testid="button-back-step-3">
                 <ChevronLeft className="w-4 h-4" />
                 Back
               </Button>
 
-              {hasExistingQuestions && !hasEdits ? (
+              {isPreviewMode ? (
+                <Button
+                  onClick={() => navigate("/dashboard")}
+                  className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-green-500/20 gap-2.5 w-full sm:w-auto bg-green-600 hover:bg-green-700 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  <Check className="w-4 h-4" />
+                  Accept & Finish
+                </Button>
+              ) : hasExistingQuestions && !hasEdits ? (
                 <Button
                   onClick={() => navigate(`/projects/${id}/questions`)}
                   className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"

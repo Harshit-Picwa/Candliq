@@ -17,11 +17,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { Header } from "@/components/header";
 import { DesktopOnlyGuard } from "@/components/desktop-only-guard";
+import { JobTitleInput } from "@/components/job-title-input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
-import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2, Loader2, ChevronRight, User, MapPin } from "lucide-react";
+import { Plus, Briefcase, Users, FileText, MoreVertical, Trash2, Loader2, ChevronRight, User, MapPin, Eye } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -205,15 +206,16 @@ export default function DashboardPage() {
                   </DialogHeader>
                   <div className="py-8">
                     <Label htmlFor="title" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 mb-3 block">Role Title</Label>
-                    <Input
-                      id="title"
-                      placeholder="e.g., Senior Full Stack Engineer"
-                      value={newProjectTitle}
-                      onChange={(e) => setNewProjectTitle(e.target.value)}
-                      className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
-                      data-testid="input-project-title"
-                      autoFocus
-                    />
+                    <div className="relative" style={{ zIndex: 100 }}>
+                      <JobTitleInput
+                        id="title"
+                        placeholder="e.g., Senior Full Stack Engineer"
+                        value={newProjectTitle}
+                        onChange={setNewProjectTitle}
+                        className="h-14 text-lg font-semibold rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5"
+                        data-testid="input-project-title"
+                      />
+                    </div>
                   </div>
                   <DialogFooter className="gap-3 sm:gap-0">
                     <Button type="button" variant="ghost" className="rounded-xl font-bold h-12 px-6" onClick={() => setIsCreateOpen(false)}>
@@ -275,7 +277,19 @@ export default function DashboardPage() {
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={8} className="rounded-xl border-border/40 shadow-xl z-[100]">
+                      <DropdownMenuContent align="end" sideOffset={8} className="rounded-xl border-border/40 shadow-xl z-[100] min-w-[160px]">
+                        <DropdownMenuItem
+                          className="font-bold text-xs p-3 rounded-lg cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            // Navigate to project page in preview mode
+                            window.location.href = `/projects/${project.id}?preview=true`;
+                          }}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Details
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive font-bold text-xs p-3 rounded-lg"
                           onClick={(e) => {

@@ -21,7 +21,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Project, ScreeningQuestion, Competency } from "@shared/schema";
-import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, Settings, Brain, X, MapPin, Calendar, Clock } from "lucide-react";
+import { ArrowLeft, Trash2, CheckCircle, AlertCircle, Loader2, MessageSquare, Edit, ShieldCheck, ArrowUp, ArrowDown, Sparkles, ChevronRight, ChevronLeft, Settings, Brain, X, MapPin, Calendar, Clock, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -140,10 +140,34 @@ export default function QuestionsSetupPage() {
   const initialStepSet = useRef(false);
   const stageSaved = useRef(false);
   
-  // Basic calculation for display (AI analysis will override when loaded)
-  const MINUTES_PER_QUESTION = 2.5;
+  // Time estimates per complexity level (must match server TIME_ESTIMATES)
+  const TIME_ESTIMATES = { simple: 2.0, moderate: 2.5, complex: 3.0 };
+  
+  // Real-time calculation based on pre-assigned complexity from AI
+  const calculateRealTimeEstimate = () => {
+    const included = questions.filter(q => q.isMandatory);
+    if (included.length === 0) return { total: 0, counts: { simple: 0, moderate: 0, complex: 0 } };
+    
+    const counts = { simple: 0, moderate: 0, complex: 0 };
+    let total = 0;
+    
+    for (const q of included) {
+      // Use AI-assigned complexity if available, otherwise default to moderate
+      const complexity = (q as any).complexity || "moderate";
+      const validComplexity = ["simple", "moderate", "complex"].includes(complexity) ? complexity : "moderate";
+      counts[validComplexity as keyof typeof counts]++;
+      total += TIME_ESTIMATES[validComplexity as keyof typeof TIME_ESTIMATES];
+    }
+    
+    const result = { total: Math.round(total * 10) / 10, counts };
+    console.log(`[TimeEstimate] ${included.length} included questions: ${counts.simple}S + ${counts.moderate}M + ${counts.complex}C = ${result.total} min`);
+    return result;
+  };
+  
+  const realTimeEstimate = calculateRealTimeEstimate();
   const includedQuestionsCount = questions.filter(q => q.isMandatory).length;
-  const estimatedMinutes = timeAnalysis?.totalEstimatedMinutes || Math.round(includedQuestionsCount * MINUTES_PER_QUESTION);
+  // Use real-time calculation (updates instantly when toggling), AI analysis overrides in modal
+  const estimatedMinutes = realTimeEstimate.total;
   const configuredScreeningTime = (project as any)?.interviewDuration || 0;
   
   // Mutation to fetch AI time analysis
@@ -157,13 +181,20 @@ export default function QuestionsSetupPage() {
     },
     onError: (error) => {
       console.error("[analyzeTime] Error:", error);
-      // Fallback to basic calculation
+      // Fallback to real-time calculation based on pre-assigned complexity
+      const estimate = calculateRealTimeEstimate();
       setTimeAnalysis({
-        totalEstimatedMinutes: Math.round(includedQuestionsCount * MINUTES_PER_QUESTION),
-        breakdown: [],
-        summary: `Estimated ${Math.round(includedQuestionsCount * MINUTES_PER_QUESTION)} minutes for ${includedQuestionsCount} questions.`,
-        recommendation: "AI analysis unavailable. Using default estimates.",
-        withinBudget: Math.round(includedQuestionsCount * MINUTES_PER_QUESTION) <= configuredScreeningTime,
+        totalEstimatedMinutes: estimate.total,
+        breakdown: questions.filter(q => q.isMandatory).map(q => ({
+          questionId: q.id,
+          questionText: q.question.substring(0, 60) + "...",
+          estimatedMinutes: TIME_ESTIMATES[(q as any).complexity || "moderate"] || 2.5,
+          complexity: (q as any).complexity || "moderate",
+          reasoning: "Based on AI-assigned complexity",
+        })),
+        summary: `The screening consists of ${estimate.counts.simple} simple, ${estimate.counts.moderate} moderate, and ${estimate.counts.complex} complex questions, totaling ${estimate.total} minutes of pure Q&A time.`,
+        recommendation: "Using pre-assigned complexity from question generation.",
+        withinBudget: estimate.total <= configuredScreeningTime,
       });
     },
   });
@@ -298,6 +329,31 @@ export default function QuestionsSetupPage() {
     },
   });
 
+  // Re-analyze complexity for existing questions (fixes AI misclassifications)
+  const reanalyzeComplexity = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/projects/${id}/reanalyze-complexity`);
+      return await res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
+      if (data.correctedCount > 0) {
+        toast({ 
+          title: "Complexity re-analyzed", 
+          description: `Corrected ${data.correctedCount} of ${data.totalQuestions} questions.` 
+        });
+      } else {
+        toast({ 
+          title: "Complexity verified", 
+          description: "All questions have correct complexity classifications." 
+        });
+      }
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to re-analyze complexity.", variant: "destructive" });
+    },
+  });
+
   const updateQuestion = (qId: string, updates: Partial<ScreeningQuestion>) => {
     const updatedQuestions = questions.map(q => q.id === qId ? { ...q, ...updates } : q);
     setQuestions(updatedQuestions);
@@ -364,6 +420,7 @@ export default function QuestionsSetupPage() {
   const toggleMandatory = (qId: string) => {
     const q = questions.find(q => q.id === qId);
     if (q) {
+      console.log(`[Toggle] Question ${qId}: isMandatory ${q.isMandatory} -> ${!q.isMandatory}`);
       updateQuestion(qId, { isMandatory: !q.isMandatory });
     }
   };
@@ -542,6 +599,20 @@ export default function QuestionsSetupPage() {
           ) : step === "edit" ? (
             <>
               <Button
+                onClick={() => reanalyzeComplexity.mutate()}
+                disabled={reanalyzeComplexity.isPending || questionCount === 0}
+                variant="ghost"
+                className="rounded-xl text-muted-foreground hover:text-foreground"
+                title="Re-analyze and fix question complexity classifications"
+              >
+                {reanalyzeComplexity.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Fix Complexity
+              </Button>
+              <Button
                 onClick={handleSave}
                 disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
                 variant="outline"
@@ -647,22 +718,6 @@ export default function QuestionsSetupPage() {
               );
             })}
           </div>
-          
-          {/* Time estimate badge - below tabs */}
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/5 border border-primary/10">
-            <Clock className="w-4 h-4 text-primary" />
-            <span className="text-xs font-bold text-primary">
-              {includedQuestionsCount} Q × {MINUTES_PER_QUESTION} min = <span className="text-sm">{estimatedMinutes} min</span>
-            </span>
-            {configuredScreeningTime > 0 && (
-              <span className={cn(
-                "text-xs font-medium ml-1",
-                estimatedMinutes > configuredScreeningTime ? "text-amber-600" : "text-green-600"
-              )}>
-                / {configuredScreeningTime} min configured
-              </span>
-            )}
-          </div>
         </div>
       }
     >
@@ -711,7 +766,7 @@ export default function QuestionsSetupPage() {
         ) : (step === "review" || isLocked) ? (
           <div className="grid gap-12 pb-20 max-w-4xl mx-auto">
             {[
-              { sectionTitle: "Included in interview", sectionSubtitle: `${includedCount} question(s)`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
+              { sectionTitle: "Included in interview", sectionSubtitle: `${includedCount} question(s) • ${estimatedMinutes} min est.${configuredScreeningTime > 0 ? ` / ${configuredScreeningTime} min budget` : ""}`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
               { sectionTitle: "Not included", sectionSubtitle: `${notIncludedCount} question(s)`, grouped: groupedNotIncluded, icon: AlertCircle, iconClass: "text-muted-foreground" },
             ].map(({ sectionTitle, sectionSubtitle, grouped, icon: SectionIcon, iconClass }) => {
               return (
@@ -1070,14 +1125,29 @@ export default function QuestionsSetupPage() {
 
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-4 mb-3">
-                                          <AutoResizeTextarea
-                                            value={question.question ?? ""}
-                                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateQuestion(question.id, { question: e.target.value })}
-                                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                                            className={`w-full text-base font-semibold leading-relaxed tracking-tight ${invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
-                                              }`}
-                                            placeholder="Enter question text..."
-                                          />
+                                          <div className="flex-1 min-w-0">
+                                            <AutoResizeTextarea
+                                              value={question.question ?? ""}
+                                              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateQuestion(question.id, { question: e.target.value })}
+                                              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                              className={`w-full text-base font-semibold leading-relaxed tracking-tight ${invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
+                                                }`}
+                                              placeholder="Enter question text..."
+                                            />
+                                            {/* Complexity badge */}
+                                            {(question as any).complexity && (
+                                              <div className="flex items-center gap-2 mt-2">
+                                                <span className={cn(
+                                                  "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
+                                                  (question as any).complexity === "simple" ? "bg-green-500/10 text-green-600" :
+                                                  (question as any).complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
+                                                  "bg-blue-500/10 text-blue-600"
+                                                )}>
+                                                  {(question as any).complexity} • {TIME_ESTIMATES[(question as any).complexity] || 2.5}m
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
                                           <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <TooltipProvider>
                                               <Tooltip>
@@ -1339,15 +1409,21 @@ export default function QuestionsSetupPage() {
                     <Loader2 className="w-8 h-8 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground font-medium">Analyzing questions with AI...</p>
                   </div>
-                ) : timeAnalysis ? (
+                ) : (
                   (() => {
-                    const aiEstimatedMinutes = timeAnalysis.totalEstimatedMinutes || Math.round(includedQuestionsCount * MINUTES_PER_QUESTION);
-                    const isWithinBudget = timeAnalysis.withinBudget ?? (aiEstimatedMinutes <= configuredScreeningTime);
-                    const overBudgetBy = Math.max(0, aiEstimatedMinutes - configuredScreeningTime);
+                    // ALWAYS use real-time calculation for accurate, dynamic values
+                    const currentEstimate = calculateRealTimeEstimate();
+                    const currentMinutes = currentEstimate.total;
+                    const currentCounts = currentEstimate.counts;
+                    const isWithinBudget = configuredScreeningTime === 0 || currentMinutes <= configuredScreeningTime;
+                    const overBudgetBy = Math.max(0, currentMinutes - configuredScreeningTime);
+                    
+                    // Generate dynamic summary from current selection
+                    const dynamicSummary = `The screening consists of ${currentCounts.simple} simple, ${currentCounts.moderate} moderate, and ${currentCounts.complex} complex questions, totaling ${currentMinutes} minutes of pure Q&A time. This calculation strictly covers the question-and-answer period and excludes introductions, follow-up probes, or closing remarks.`;
                     
                     return (
                       <>
-                        {/* Time Summary */}
+                        {/* Time Summary - ALWAYS uses real-time calculation */}
                         <div className={cn(
                           "flex items-center gap-3 p-4 rounded-xl border",
                           isWithinBudget 
@@ -1357,7 +1433,7 @@ export default function QuestionsSetupPage() {
                           <Clock className={cn("w-6 h-6", isWithinBudget ? "text-green-600" : "text-amber-600")} />
                           <div className="flex-1">
                             <p className="font-bold text-foreground text-lg">
-                              {aiEstimatedMinutes} min estimated
+                              {currentMinutes} min estimated
                             </p>
                             <p className="text-sm text-muted-foreground">
                               for {includedQuestionsCount} included questions
@@ -1369,67 +1445,65 @@ export default function QuestionsSetupPage() {
                               )}>
                                 {isWithinBudget 
                                   ? `✓ Within your ${configuredScreeningTime} min budget`
-                                  : `⚠️ Exceeds your ${configuredScreeningTime} min budget by ${overBudgetBy} min`
+                                  : `⚠️ Exceeds your ${configuredScreeningTime} min budget by ${overBudgetBy.toFixed(1)} min`
                                 }
                               </p>
                             )}
                           </div>
                         </div>
 
-                        {/* AI Summary */}
-                        {timeAnalysis.summary && (
-                          <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
-                            <p className="text-sm text-foreground font-medium">{timeAnalysis.summary}</p>
-                          </div>
-                        )}
+                        {/* Dynamic Summary - ALWAYS uses real-time calculation */}
+                        <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
+                          <p className="text-sm text-foreground font-medium">{dynamicSummary}</p>
+                        </div>
 
-                        {/* Question Breakdown (collapsible) */}
-                        {timeAnalysis.breakdown && timeAnalysis.breakdown.length > 0 && (
+                        {/* Question Breakdown (collapsible) - Uses current questions */}
+                        {includedQuestionsCount > 0 && (
                           <details className="group">
                             <summary className="text-xs font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-2">
                               <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
                               View breakdown by question
                             </summary>
                             <div className="mt-3 space-y-2 max-h-[200px] overflow-y-auto">
-                              {timeAnalysis.breakdown.map((item, idx) => (
-                                <div key={item.questionId || idx} className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-border/20 text-xs">
-                                  <span className={cn(
-                                    "shrink-0 px-1.5 py-0.5 rounded font-bold uppercase",
-                                    item.complexity === "simple" ? "bg-green-500/10 text-green-600" :
-                                    item.complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
-                                    "bg-blue-500/10 text-blue-600"
-                                  )}>
-                                    {item.estimatedMinutes || 2.5}m
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-foreground/80 truncate">{item.questionText || "Question"}</p>
-                                    {item.reasoning && <p className="text-muted-foreground text-[10px] mt-0.5">{item.reasoning}</p>}
+                              {questions.filter(q => q.isMandatory).map((q, idx) => {
+                                const complexity = (q as any).complexity || "moderate";
+                                const minutes = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES] || 2.5;
+                                return (
+                                  <div key={q.id} className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-border/20 text-xs">
+                                    <span className={cn(
+                                      "shrink-0 px-1.5 py-0.5 rounded font-bold uppercase",
+                                      complexity === "simple" ? "bg-green-500/10 text-green-600" :
+                                      complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
+                                      "bg-blue-500/10 text-blue-600"
+                                    )}>
+                                      {minutes}m
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-foreground/80 truncate">{q.question.substring(0, 60)}...</p>
+                                      <p className="text-muted-foreground text-[10px] mt-0.5">{complexity} complexity</p>
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </details>
                         )}
 
-                        {/* AI Recommendation */}
-                        {timeAnalysis.recommendation && (
-                          <div className="p-3 rounded-xl bg-primary/5 border border-primary/10">
-                            <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">AI Recommendation</p>
-                            <p className="text-sm text-foreground">{timeAnalysis.recommendation}</p>
-                          </div>
-                        )}
+                        {/* Dynamic AI Recommendation */}
+                        <div className="p-3 rounded-xl bg-primary/5 border border-primary/10">
+                          <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">AI Recommendation</p>
+                          <p className="text-sm text-foreground">
+                            {configuredScreeningTime === 0
+                              ? `Your interview will take approximately ${currentMinutes} minutes for the Q&A portion.`
+                              : isWithinBudget
+                                ? `At ${currentMinutes} minutes, you are within your ${configuredScreeningTime}-minute Q&A budget with ${(configuredScreeningTime - currentMinutes).toFixed(1)} minutes remaining. The timing is well-optimized.`
+                                : `At ${currentMinutes} minutes, you exceed your ${configuredScreeningTime}-minute Q&A budget by ${overBudgetBy.toFixed(1)} minutes. Consider removing ${Math.ceil(overBudgetBy / 2.5)} questions to fit within budget.`
+                            }
+                          </p>
+                        </div>
                       </>
                     );
                   })()
-                ) : (
-                  <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/10">
-                    <Clock className="w-5 h-5 text-primary" />
-                    <div>
-                      <p className="font-bold text-foreground">
-                        {includedQuestionsCount} questions × ~{MINUTES_PER_QUESTION} min = ~{Math.round(includedQuestionsCount * MINUTES_PER_QUESTION)} min
-                      </p>
-                    </div>
-                  </div>
                 )}
 
                 <p className="text-muted-foreground text-sm">

@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { extractCompetenciesAndQuestions, regenerateQuestionsWithInstructions, generateFollowUpSuggestions, generateInterviewReport, evaluateAnswerQuality, refineIndividualQuestion, refineMultipleQuestions, refineJobDescription, analyzeQuestionTime } from "./services/gemini";
 import { transcribeAudio, detectSpeaker } from "./services/whisper";
+import { searchJobTitlesDynamic } from "./services/job-titles";
 import type { TranscriptEntry, InterviewNotes, ScreeningQuestion, Project, Competency } from "@shared/schema";
 
 // Extend Express.User type to include our user properties
@@ -85,6 +86,26 @@ export async function registerRoutes(
     }
   });
 
+  // Job titles search endpoint - uses ESCO API with local fallback
+  app.get("/api/job-titles/search", async (req, res) => {
+    try {
+      const query = (req.query.q as string) || "";
+      const limit = Math.min(parseInt(req.query.limit as string) || 15, 50);
+      
+      console.log(`[job-titles-search] Query: "${query}", Limit: ${limit}`);
+      
+      // Use dynamic search (API + local fallback)
+      const results = await searchJobTitlesDynamic(query, limit);
+      
+      console.log(`[job-titles-search] Found ${results.length} results:`, results.slice(0, 3));
+      
+      res.json({ titles: results });
+    } catch (error) {
+      console.error("[job-titles-search] Error:", error);
+      res.status(500).json({ error: "Failed to search job titles", titles: [] });
+    }
+  });
+
   app.patch("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
       const body = { ...req.body } as Record<string, unknown>;
@@ -144,12 +165,16 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Job description is required. Please add a job description before generating questions." });
       }
 
+      const locationParts = [project.locationCity, project.locationState, project.locationCountry].filter(Boolean);
+      const location = locationParts.length ? locationParts.join(", ") : undefined;
+
       console.log("[generate-questions] Calling Gemini with JD length:", project.jdText.length, "screening minutes:", project.interviewDuration);
       const { competencies, questions, history } = await extractCompetenciesAndQuestions(
         project.jdText,
         project.smeNotesText || undefined,
         undefined, // customInstructions
         project.companyWebsite || undefined,
+        location,
         project.interviewDuration || undefined,
         undefined, // existing questions
         (project.aiChatHistoryJson || []) as any
@@ -178,6 +203,8 @@ export async function registerRoutes(
       if (!project.jdText) return res.status(400).json({ error: "Job description is required" });
 
       const { customInstructions } = req.body;
+      const locationParts = [project.locationCity, project.locationState, project.locationCountry].filter(Boolean);
+      const location = locationParts.length ? locationParts.join(", ") : undefined;
 
       console.log("[regenerate-questions] Calling Gemini with custom instructions:", customInstructions?.substring(0, 50));
       const existingQuestions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
@@ -186,6 +213,7 @@ export async function registerRoutes(
         project.smeNotesText || undefined,
         customInstructions || undefined,
         project.companyWebsite || undefined,
+        location,
         project.interviewDuration || undefined,
         existingQuestions,
         (project.aiChatHistoryJson || []) as any
@@ -263,6 +291,8 @@ export async function registerRoutes(
         project.jdText,
         questionsToRefine,
         customInstructions || "Refine these questions for better clarity and relevance.",
+        project.smeNotes || undefined,
+        project.interviewDuration || undefined,
         (project.aiChatHistoryJson || []) as any
       );
 
@@ -317,6 +347,91 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[analyze-time] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to analyze question time", details: error?.message });
+    }
+  });
+
+  // Re-analyze complexity for existing questions (fixes misclassifications)
+  app.post("/api/projects/:id/reanalyze-complexity", isAuthenticated, async (req, res) => {
+    try {
+      const project = await storage.getProject(parseInt(req.params.id));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const questions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
+      
+      if (!questions || questions.length === 0) {
+        return res.status(400).json({ error: "No questions to analyze" });
+      }
+
+      console.log(`[reanalyze-complexity] Re-analyzing ${questions.length} questions for project ${req.params.id}`);
+      
+      // Time estimates per complexity level
+      const TIME_ESTIMATES = { simple: 2.0, moderate: 2.5, complex: 3.0 };
+      
+      // Auto-correct complexity based on objective metrics
+      const correctedQuestions = questions.map((q: any) => {
+        const text = q.question || "";
+        const wordCount = text.split(/\s+/).filter((w: string) => w.length > 0).length;
+        
+        // Count complexity escalators
+        const andCount = (text.match(/\bAND\b/gi) || []).length;
+        const orCount = (text.match(/\bOR\b/gi) || []).length;
+        const versusCount = (text.match(/\bversus\b|\bvs\.?\b/gi) || []).length;
+        const walkMeThrough = /walk\s+(me\s+)?through/i.test(text);
+        const explainMultiple = /explain.*and.*and/i.test(text);
+        const connectorCount = andCount + orCount + versusCount;
+        
+        const originalComplexity = q.complexity || "moderate";
+        let newComplexity: "simple" | "moderate" | "complex" = originalComplexity;
+        
+        // Strict rules for complexity
+        if (wordCount > 50 || connectorCount >= 2 || explainMultiple) {
+          newComplexity = "complex";
+        } else if (wordCount > 30 || connectorCount >= 1 || walkMeThrough) {
+          if (newComplexity === "simple") {
+            newComplexity = "moderate";
+          }
+        } else if (wordCount <= 25 && connectorCount === 0 && !walkMeThrough) {
+          // Can stay simple if it was already simple
+        }
+        
+        // Additional check for misclassified simple questions
+        if (originalComplexity === "simple" && walkMeThrough && (andCount > 0 || orCount > 0)) {
+          newComplexity = "complex";
+        }
+        
+        const corrected = newComplexity !== originalComplexity;
+        if (corrected) {
+          console.log(`[reanalyze-complexity] Corrected: "${text.substring(0, 50)}..." from ${originalComplexity} → ${newComplexity} (${wordCount} words)`);
+        }
+        
+        return {
+          ...q,
+          complexity: newComplexity,
+          estimatedMinutes: TIME_ESTIMATES[newComplexity],
+        };
+      });
+      
+      // Count corrections
+      const correctionCount = correctedQuestions.filter((q: any, i: number) => 
+        q.complexity !== questions[i].complexity
+      ).length;
+      
+      // Save updated questions
+      await storage.updateProject(parseInt(req.params.id), {
+        screeningQuestionsJson: correctedQuestions,
+      });
+      
+      console.log(`[reanalyze-complexity] Corrected ${correctionCount} of ${questions.length} questions`);
+      
+      res.json({ 
+        success: true, 
+        correctedCount: correctionCount,
+        totalQuestions: questions.length,
+        questions: correctedQuestions 
+      });
+    } catch (error: any) {
+      console.error("[reanalyze-complexity] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to re-analyze complexity", details: error?.message });
     }
   });
 

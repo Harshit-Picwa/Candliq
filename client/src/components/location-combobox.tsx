@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Check, MapPin } from "lucide-react";
+import { Check, MapPin, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
-  LOCATIONS_AU_NZ,
+  searchLocations,
   getLocationLabel,
   type LocationOption,
-} from "@/lib/locations-au-nz";
+} from "@/lib/locations";
 
 export interface LocationValue {
   city: string;
@@ -16,16 +16,21 @@ export interface LocationValue {
   country: string;
 }
 
-function filterLocations(query: string): LocationOption[] {
-  const q = (query || "").trim().toLowerCase();
-  if (!q) return LOCATIONS_AU_NZ;
-  return LOCATIONS_AU_NZ.filter(
-    (opt) =>
-      opt.city.toLowerCase().includes(q) ||
-      opt.state.toLowerCase().includes(q) ||
-      opt.country.toLowerCase().includes(q) ||
-      opt.label.toLowerCase().includes(q)
-  );
+// Debounce hook for search
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState<T>(value);
+
+  React.useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
 }
 
 interface LocationComboboxProps {
@@ -35,6 +40,7 @@ interface LocationComboboxProps {
   className?: string;
   id?: string;
   "data-testid"?: string;
+  disabled?: boolean;
 }
 
 export function LocationCombobox({
@@ -44,10 +50,13 @@ export function LocationCombobox({
   className,
   id,
   "data-testid": dataTestId,
+  disabled = false,
 }: LocationComboboxProps) {
   const [inputValue, setInputValue] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [highlightIndex, setHighlightIndex] = React.useState(0);
+  const [isSearching, setIsSearching] = React.useState(false);
+  const [options, setOptions] = React.useState<LocationOption[]>([]);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLUListElement>(null);
 
@@ -56,14 +65,24 @@ export function LocationCombobox({
     : inputValue;
 
   const searchText = value ? "" : inputValue;
-  const options = React.useMemo(
-    () => filterLocations(searchText),
-    [searchText]
-  );
+  const debouncedSearch = useDebounce(searchText, 300);
 
-  const showList = open && options.length > 0;
+  // Search locations when debounced search text changes
+  React.useEffect(() => {
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      const results = searchLocations(debouncedSearch, 50);
+      setOptions(results);
+      setIsSearching(false);
+      setHighlightIndex(0);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [debouncedSearch]);
 
-  // Sync input when value is set externally (e.g. from project load)
+  // Show dropdown when open and we have options OR user typed 2+ chars
+  const showList = open && (options.length > 0 || isSearching || inputValue.length >= 2);
+
+  // Sync input when value is set externally
   React.useEffect(() => {
     if (value) {
       setInputValue(getLocationLabel(value.city, value.state, value.country));
@@ -78,8 +97,7 @@ export function LocationCombobox({
   };
 
   const handleBlur = () => {
-    // Delay so click on an option registers
-    setTimeout(() => setOpen(false), 150);
+    setTimeout(() => setOpen(false), 200);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,7 +150,7 @@ export function LocationCombobox({
   };
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative", className)} style={{ zIndex: showList ? 9999 : 'auto' }}>
       <div className="relative">
         <MapPin className="absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 shrink-0 text-muted-foreground pointer-events-none" />
         <Input
@@ -142,13 +160,15 @@ export function LocationCombobox({
           type="text"
           value={displayText}
           onChange={handleChange}
-          onFocus={handleFocus}
+          onFocus={disabled ? undefined : handleFocus}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoComplete="off"
+          disabled={disabled}
           className={cn(
-            "h-14 pl-12 pr-10 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all"
+            "h-14 pl-12 pr-10 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all",
+            disabled && "cursor-not-allowed opacity-70"
           )}
         />
         {value && (
@@ -166,41 +186,56 @@ export function LocationCombobox({
       {showList && (
         <ul
           ref={listRef}
-          className="absolute z-50 mt-1 w-full max-h-[280px] overflow-auto rounded-2xl border border-border/60 bg-popover text-popover-foreground shadow-md py-1"
+          className="absolute left-0 right-0 top-full mt-2 z-[9999] max-h-[280px] overflow-auto rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-2xl py-1"
           role="listbox"
+          style={{ 
+            position: 'absolute',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.15)'
+          }}
         >
-          {options.slice(0, 50).map((option, i) => {
-            const isSelected =
-              value?.city === option.city &&
-              value?.state === option.state &&
-              value?.country === option.country;
-            const isHighlighted = i === highlightIndex;
-            return (
-              <li
-                key={option.label}
-                role="option"
-                aria-selected={isSelected}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
-                  isHighlighted && "bg-accent text-accent-foreground",
-                  !isHighlighted && "hover:bg-muted/80"
-                )}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  handleSelect(option);
-                }}
-                onMouseEnter={() => setHighlightIndex(i)}
-              >
-                <Check
+          {isSearching ? (
+            <li className="flex items-center justify-center gap-2 px-4 py-3 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Searching locations...
+            </li>
+          ) : options.length === 0 ? (
+            <li className="px-4 py-3 text-sm text-gray-500 text-center">
+              No locations found. Try a different search.
+            </li>
+          ) : (
+            options.map((option, i) => {
+              const isSelected =
+                value?.city === option.city &&
+                value?.state === option.state &&
+                value?.country === option.country;
+              const isHighlighted = i === highlightIndex;
+              return (
+                <li
+                  key={`${option.city}-${option.stateCode}-${option.countryCode}-${i}`}
+                  role="option"
+                  aria-selected={isSelected}
                   className={cn(
-                    "h-4 w-4 shrink-0",
-                    isSelected ? "opacity-100" : "opacity-0"
+                    "flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
+                    isHighlighted && "bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100",
+                    !isHighlighted && "hover:bg-gray-100 dark:hover:bg-gray-800"
                   )}
-                />
-                <span className="truncate">{option.label}</span>
-              </li>
-            );
-          })}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(option);
+                  }}
+                  onMouseEnter={() => setHighlightIndex(i)}
+                >
+                  <Check
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      isSelected ? "opacity-100 text-blue-600" : "opacity-0"
+                    )}
+                  />
+                  <span className="truncate">{option.label}</span>
+                </li>
+              );
+            })
+          )}
         </ul>
       )}
     </div>
