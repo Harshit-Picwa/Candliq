@@ -95,6 +95,14 @@ export default function QuestionsSetupPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  
+  // Check if we're in preview/review mode
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setIsPreviewMode(params.get("preview") === "true");
+  }, []);
 
   const { data: project, isLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -188,7 +196,7 @@ export default function QuestionsSetupPage() {
         breakdown: questions.filter(q => q.isMandatory).map(q => ({
           questionId: q.id,
           questionText: q.question.substring(0, 60) + "...",
-          estimatedMinutes: TIME_ESTIMATES[(q as any).complexity || "moderate"] || 2.5,
+          estimatedMinutes: TIME_ESTIMATES[((q as any).complexity || "moderate") as keyof typeof TIME_ESTIMATES] || 2.5,
           complexity: (q as any).complexity || "moderate",
           reasoning: "Based on AI-assigned complexity",
         })),
@@ -490,6 +498,11 @@ export default function QuestionsSetupPage() {
   };
 
   const handleContinueToReview = () => {
+    // In preview mode, just navigate to review step without AI analysis popup
+    if (isPreviewMode) {
+      setStep("review");
+      return;
+    }
     if (!validateAllQuestions()) return;
     // Trigger AI analysis and show confirmation modal
     setTimeAnalysis(null); // Reset previous analysis
@@ -524,15 +537,19 @@ export default function QuestionsSetupPage() {
       currentStage={2}
       stageDescription="Stage 2: Refine questions, review rubrics, then approve to go live"
       onStageClick={(s) => {
-        if (s === 1) navigate(`/projects/${id}`);
+        if (s === 1) navigate(`/projects/${id}${isPreviewMode ? '?preview=true' : ''}`);
         if (s === 2 && step !== "review") {
+          if (isPreviewMode) {
+            setStep("review");
+            return;
+          }
           if (!validateAllQuestions()) return;
           // Trigger AI analysis and show confirmation modal
           setTimeAnalysis(null);
           analyzeTime.mutate();
           setShowReviewConfirmModal(true);
         }
-        if (s === 3) navigate(`/projects/${id}/interviews`);
+        if (s === 3) navigate(`/projects/${id}/interviews${isPreviewMode ? '?preview=true' : ''}`);
       }}
       clickableStages={isLocked ? [2, 3] : [1, 2, 3]}
       questionCount={questionCount}
@@ -580,7 +597,7 @@ export default function QuestionsSetupPage() {
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
+                disabled={saveQuestions.isPending}
                 variant="outline"
                 className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm"
               >
@@ -599,22 +616,8 @@ export default function QuestionsSetupPage() {
           ) : step === "edit" ? (
             <>
               <Button
-                onClick={() => reanalyzeComplexity.mutate()}
-                disabled={reanalyzeComplexity.isPending || questionCount === 0}
-                variant="ghost"
-                className="rounded-xl text-muted-foreground hover:text-foreground"
-                title="Re-analyze and fix question complexity classifications"
-              >
-                {reanalyzeComplexity.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                )}
-                Fix Complexity
-              </Button>
-              <Button
                 onClick={handleSave}
-                disabled={saveQuestions.isPending || !hasChanges || invalidQuestionIds.size > 0}
+                disabled={saveQuestions.isPending}
                 variant="outline"
                 className="rounded-xl border-border/60 hover:bg-background/60 shadow-sm"
                 data-testid="button-save-questions"
@@ -690,6 +693,10 @@ export default function QuestionsSetupPage() {
                     onClick={() => {
                       if (isLocked && stepId === "edit") return;
                       if (stepId === "review") {
+                        if (isPreviewMode) {
+                          setStep("review");
+                          return;
+                        }
                         if (!validateAllQuestions()) return;
                         // Trigger AI analysis and show confirmation modal
                         setTimeAnalysis(null);
@@ -897,8 +904,8 @@ export default function QuestionsSetupPage() {
                                         {q.isMandatory ? "Included for interview" : "Excluded"}
                                       </span>
                                     </div>
-                                    {isLocked ? (
-                                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Locked</span>
+                                    {isLocked || isPreviewMode ? (
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{isPreviewMode ? "Preview" : "Locked"}</span>
                                     ) : (
                                       <Checkbox
                                         checked={q.isMandatory}
@@ -943,7 +950,9 @@ export default function QuestionsSetupPage() {
                         variant="default"
                         size="sm"
                         className="gap-2 rounded-xl shadow-lg shadow-primary/20 bg-primary font-bold animate-in slide-in-from-right-4"
+                        disabled={isPreviewMode}
                         onClick={() => {
+                          if (isPreviewMode) return;
                           setIsRefiningSelected(true);
                           setIsRefiningIndividual(false);
                           setShowRefineDialog(true);
@@ -965,8 +974,9 @@ export default function QuestionsSetupPage() {
                             variant="secondary"
                             size="sm"
                             className="gap-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/10 shadow-sm"
-                            disabled={!project?.jdText || refineQuestions.isPending}
+                            disabled={!project?.jdText || refineQuestions.isPending || isPreviewMode}
                             onClick={() => {
+                              if (isPreviewMode) return;
                               setIsRefiningIndividual(false);
                               setIsRefiningSelected(false);
                             }}
@@ -1075,12 +1085,13 @@ export default function QuestionsSetupPage() {
                                     <div className="flex items-start gap-4">
                                       <div className="flex flex-col items-center gap-2 shrink-0">
                                         <div
-                                          className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 transition-all cursor-pointer ${selectedForRefine.has(question.id)
+                                          className={`flex h-6 w-6 items-center justify-center rounded-lg border-2 transition-all ${isPreviewMode ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${selectedForRefine.has(question.id)
                                             ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
                                             : "border-border/60 bg-muted hover:border-primary/40"
                                             }`}
                                           onClick={(e: React.MouseEvent) => {
                                             e.stopPropagation();
+                                            if (isPreviewMode) return;
                                             const newSet = new Set(selectedForRefine);
                                             if (newSet.has(question.id)) newSet.delete(question.id);
                                             else newSet.add(question.id);
@@ -1095,32 +1106,34 @@ export default function QuestionsSetupPage() {
                                             </span>
                                           )}
                                         </div>
-                                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
-                                            onClick={(e: React.MouseEvent) => {
-                                              e.stopPropagation();
-                                              moveQuestion(question.id, "up");
-                                            }}
-                                            disabled={activeIdx === 0 && idx === 0}
-                                          >
-                                            <ArrowUp className="w-3.5 h-3.5" />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
-                                            onClick={(e: React.MouseEvent) => {
-                                              e.stopPropagation();
-                                              moveQuestion(question.id, "down");
-                                            }}
-                                            disabled={activeIdx === (groupedQuestions.filter(g => g.questions.length > 0).length - 1) && idx === (compQuestions.length - 1)}
-                                          >
-                                            <ArrowDown className="w-3.5 h-3.5" />
-                                          </Button>
-                                        </div>
+                                        {!isPreviewMode && (
+                                          <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
+                                              onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                moveQuestion(question.id, "up");
+                                              }}
+                                              disabled={activeIdx === 0 && idx === 0}
+                                            >
+                                              <ArrowUp className="w-3.5 h-3.5" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 rounded-lg p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-20"
+                                              onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                moveQuestion(question.id, "down");
+                                              }}
+                                              disabled={activeIdx === (groupedQuestions.filter(g => g.questions.length > 0).length - 1) && idx === (compQuestions.length - 1)}
+                                            >
+                                              <ArrowDown className="w-3.5 h-3.5" />
+                                            </Button>
+                                          </div>
+                                        )}
                                       </div>
 
                                       <div className="flex-1 min-w-0">
@@ -1128,10 +1141,14 @@ export default function QuestionsSetupPage() {
                                           <div className="flex-1 min-w-0">
                                             <AutoResizeTextarea
                                               value={question.question ?? ""}
-                                              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateQuestion(question.id, { question: e.target.value })}
+                                              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => !isPreviewMode && updateQuestion(question.id, { question: e.target.value })}
                                               onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                                              className={`w-full text-base font-semibold leading-relaxed tracking-tight ${invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90"
-                                                }`}
+                                              readOnly={isPreviewMode}
+                                              className={cn(
+                                                "w-full text-base font-semibold leading-relaxed tracking-tight",
+                                                invalidQuestionIds.has(question.id) ? "text-destructive" : "text-foreground/90",
+                                                isPreviewMode && "cursor-not-allowed"
+                                              )}
                                               placeholder="Enter question text..."
                                             />
                                             {/* Complexity badge */}
@@ -1143,7 +1160,7 @@ export default function QuestionsSetupPage() {
                                                   (question as any).complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
                                                   "bg-blue-500/10 text-blue-600"
                                                 )}>
-                                                  {(question as any).complexity} • {TIME_ESTIMATES[(question as any).complexity] || 2.5}m
+                                                  {(question as any).complexity} • {TIME_ESTIMATES[((question as any).complexity) as keyof typeof TIME_ESTIMATES] || 2.5}m
                                                 </span>
                                               </div>
                                             )}
@@ -1156,8 +1173,10 @@ export default function QuestionsSetupPage() {
                                                     variant="ghost"
                                                     size="icon"
                                                     className="h-9 w-9 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 border border-transparent hover:border-primary/20"
+                                                    disabled={isPreviewMode}
                                                     onClick={(e: React.MouseEvent) => {
                                                       e.stopPropagation();
+                                                      if (isPreviewMode) return;
                                                       setSelectedQuestionId(question.id);
                                                       setIsRefiningIndividual(true);
                                                       setShowRefineDialog(true);
@@ -1166,7 +1185,7 @@ export default function QuestionsSetupPage() {
                                                     <Sparkles className="w-4 h-4" />
                                                   </Button>
                                                 </TooltipTrigger>
-                                                <TooltipContent>AI Refine</TooltipContent>
+                                                <TooltipContent>{isPreviewMode ? "Disabled in preview mode" : "AI Refine"}</TooltipContent>
                                               </Tooltip>
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
@@ -1174,8 +1193,10 @@ export default function QuestionsSetupPage() {
                                                     variant="ghost"
                                                     size="icon"
                                                     className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
+                                                    disabled={isPreviewMode}
                                                     onClick={(e: React.MouseEvent) => {
                                                       e.stopPropagation();
+                                                      if (isPreviewMode) return;
                                                       setDeleteQuestionConfirm({
                                                         id: question.id,
                                                         preview: (question.question || "").trim().slice(0, 120),
@@ -1185,7 +1206,7 @@ export default function QuestionsSetupPage() {
                                                     <Trash2 className="w-4 h-4" />
                                                   </Button>
                                                 </TooltipTrigger>
-                                                <TooltipContent>Delete</TooltipContent>
+                                                <TooltipContent>{isPreviewMode ? "Disabled in preview mode" : "Delete"}</TooltipContent>
                                               </Tooltip>
                                             </TooltipProvider>
                                           </div>
@@ -1196,15 +1217,20 @@ export default function QuestionsSetupPage() {
                                             <Tooltip>
                                               <TooltipTrigger asChild>
                                                 <div
-                                                  className="inline-flex items-center gap-2.5 rounded-xl border-2 border-border bg-muted/20 px-3 py-2 cursor-pointer hover:bg-muted/40 hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                                                  className={cn(
+                                                    "inline-flex items-center gap-2.5 rounded-xl border-2 border-border bg-muted/20 px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                                                    isPreviewMode ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-muted/40 hover:border-primary/40"
+                                                  )}
                                                   onClick={(e: React.MouseEvent) => {
                                                     e.stopPropagation();
+                                                    if (isPreviewMode) return;
                                                     toggleMandatory(question.id);
                                                   }}
                                                 >
                                                   <Checkbox
                                                     checked={question.isMandatory}
-                                                    onCheckedChange={() => toggleMandatory(question.id)}
+                                                    onCheckedChange={() => !isPreviewMode && toggleMandatory(question.id)}
+                                                    disabled={isPreviewMode}
                                                     className="h-5 w-5 shrink-0 rounded border-2 border-foreground/40 bg-background data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                                                   />
                                                   <span className={`text-xs font-bold select-none transition-colors ${question.isMandatory ? "text-primary" : "text-foreground/80"}`}>
@@ -1213,7 +1239,7 @@ export default function QuestionsSetupPage() {
                                                 </div>
                                               </TooltipTrigger>
                                               <TooltipContent side="top" align="start" sideOffset={6} className="font-medium">
-                                                Click here to include
+                                                {isPreviewMode ? "Disabled in preview mode" : "Click here to include"}
                                               </TooltipContent>
                                             </Tooltip>
                                           </TooltipProvider>
@@ -1222,15 +1248,19 @@ export default function QuestionsSetupPage() {
                                             {!editedQuestionIds.has(question.id) ? (
                                               <Badge
                                                 variant="outline"
-                                                className="bg-primary/5 text-primary border-primary/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider cursor-pointer hover:bg-primary/10 transition-colors"
+                                                className={cn(
+                                                  "bg-primary/5 text-primary border-primary/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors",
+                                                  isPreviewMode ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-primary/10"
+                                                )}
                                                 onClick={(e) => {
                                                   e.stopPropagation();
+                                                  if (isPreviewMode) return;
                                                   setSelectedQuestionId(question.id);
                                                   setIsRefiningIndividual(true);
                                                   setShowRefineDialog(true);
                                                 }}
                                               >
-                                                <Sparkles className="w-3 h-3" /> AI Refine
+                                                <Sparkles className="w-3 h-3" /> {isPreviewMode ? "AI Generated" : "AI Refine"}
                                               </Badge>
                                             ) : (
                                               <Badge variant="outline" className="bg-amber-500/5 text-amber-600 border-amber-500/10 gap-1.5 py-0.5 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider">
@@ -1379,7 +1409,9 @@ export default function QuestionsSetupPage() {
                       variant="outline"
                       size="sm"
                       className="w-full rounded-xl gap-2 font-bold text-xs h-9 bg-background border-border/60 shadow-sm"
+                      disabled={isPreviewMode}
                       onClick={() => {
+                        if (isPreviewMode) return;
                         setIsRefiningIndividual(true);
                         setShowRefineDialog(true);
                       }}
@@ -1394,8 +1426,8 @@ export default function QuestionsSetupPage() {
           </div>
         ) : null
       )}
-      {/* Confirmation Modal for Review & Approve with AI Analysis */}
-      <AlertDialog open={showReviewConfirmModal} onOpenChange={setShowReviewConfirmModal}>
+      {/* Confirmation Modal for Review & Approve with AI Analysis - Hidden in preview mode */}
+      <AlertDialog open={showReviewConfirmModal && !isPreviewMode} onOpenChange={(open) => !isPreviewMode && setShowReviewConfirmModal(open)}>
         <AlertDialogContent className="rounded-2xl max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-xl font-black flex items-center gap-2">

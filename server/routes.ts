@@ -291,7 +291,7 @@ export async function registerRoutes(
         project.jdText,
         questionsToRefine,
         customInstructions || "Refine these questions for better clarity and relevance.",
-        project.smeNotes || undefined,
+        project.smeNotesText || undefined,
         project.interviewDuration || undefined,
         (project.aiChatHistoryJson || []) as any
       );
