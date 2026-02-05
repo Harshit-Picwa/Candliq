@@ -32,6 +32,7 @@ model User {
   firstName      String?   @map("first_name") @db.VarChar
   lastName       String?   @map("last_name") @db.VarChar
   profileImageUrl String?  @map("profile_image_url") @db.VarChar
+  companyWebsite String?   @map("company_website") @db.VarChar
   createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamp
   updatedAt      DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp
 

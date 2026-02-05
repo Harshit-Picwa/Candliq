@@ -44,6 +44,7 @@ export default function LoginPage() {
   const [signupPassword, setSignupPassword] = useState("");
   const [signupFirstName, setSignupFirstName] = useState("");
   const [signupLastName, setSignupLastName] = useState("");
+  const [signupCompanyWebsite, setSignupCompanyWebsite] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
@@ -86,17 +87,19 @@ export default function LoginPage() {
       password,
       firstName,
       lastName,
+      companyWebsite,
     }: {
       email: string;
       password: string;
       firstName?: string;
       lastName?: string;
+      companyWebsite?: string;
     }) => {
       const response = await fetch("/api/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password, firstName, lastName }),
+        body: JSON.stringify({ email, password, firstName, lastName, companyWebsite }),
       });
 
       if (!response.ok) {
@@ -146,6 +149,14 @@ export default function LoginPage() {
       });
       return;
     }
+    if (!signupCompanyWebsite.trim()) {
+      toast({
+        title: "Missing fields",
+        description: "Please enter your company website",
+        variant: "destructive",
+      });
+      return;
+    }
     if (signupPassword.length < 8) {
       toast({
         title: "Password too short",
@@ -159,6 +170,7 @@ export default function LoginPage() {
       password: signupPassword,
       firstName: signupFirstName || undefined,
       lastName: signupLastName || undefined,
+      companyWebsite: signupCompanyWebsite.trim() || undefined,
     });
   };
 
@@ -283,6 +295,48 @@ export default function LoginPage() {
 
                 <TabsContent value="signup" className="space-y-6 mt-0 animate-in fade-in slide-in-from-left-4 duration-500">
                   <form onSubmit={handleSignup} className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <Label htmlFor="signup-firstname" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">First Name</Label>
+                        <Input
+                          id="signup-firstname"
+                          type="text"
+                          placeholder="Jane"
+                          value={signupFirstName}
+                          onChange={(e) => setSignupFirstName(e.target.value)}
+                          disabled={signupMutation.isPending}
+                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label htmlFor="signup-lastname" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Last Name</Label>
+                        <Input
+                          id="signup-lastname"
+                          type="text"
+                          placeholder="Doe"
+                          value={signupLastName}
+                          onChange={(e) => setSignupLastName(e.target.value)}
+                          disabled={signupMutation.isPending}
+                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="signup-company-website" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Company Website</Label>
+                      <div className="relative">
+                        <Input
+                          id="signup-company-website"
+                          type="text"
+                          placeholder="https://company.com"
+                          value={signupCompanyWebsite}
+                          onChange={(e) => setSignupCompanyWebsite(e.target.value)}
+                          required
+                          disabled={signupMutation.isPending}
+                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium pl-12 pr-5"
+                        />
+                        <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-muted-foreground/60" />
+                      </div>
+                    </div>
                     <div className="space-y-3">
                       <Label htmlFor="signup-email" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Email Address</Label>
                       <Input
@@ -329,32 +383,6 @@ export default function LoginPage() {
                         ) : (
                           <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">At least 8 characters required</span>
                         )}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <Label htmlFor="signup-firstname" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">First Name</Label>
-                        <Input
-                          id="signup-firstname"
-                          type="text"
-                          placeholder="Jane"
-                          value={signupFirstName}
-                          onChange={(e) => setSignupFirstName(e.target.value)}
-                          disabled={signupMutation.isPending}
-                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
-                        />
-                      </div>
-                      <div className="space-y-3">
-                        <Label htmlFor="signup-lastname" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Last Name</Label>
-                        <Input
-                          id="signup-lastname"
-                          type="text"
-                          placeholder="Doe"
-                          value={signupLastName}
-                          onChange={(e) => setSignupLastName(e.target.value)}
-                          disabled={signupMutation.isPending}
-                          className="h-14 rounded-2xl border-border/60 bg-muted/30 focus-visible:ring-primary/20 focus-visible:border-primary transition-all font-medium px-5"
-                        />
                       </div>
                     </div>
                     <Button

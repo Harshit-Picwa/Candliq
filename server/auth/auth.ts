@@ -378,7 +378,7 @@ export async function setupAuth(app: Express) {
   // Signup endpoint
   app.post("/api/signup", async (req, res) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, companyWebsite } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password are required" });
@@ -411,6 +411,7 @@ export async function setupAuth(app: Express) {
         firstName: firstName || null,
         lastName: lastName || null,
         profileImageUrl: null,
+        companyWebsite: companyWebsite || null,
       });
       console.log(`[auth] User created successfully: ${user.id} (${email})`);
 
@@ -422,6 +423,7 @@ export async function setupAuth(app: Express) {
         firstName: user.firstName ?? undefined,
         lastName: user.lastName ?? undefined,
         profileImageUrl: user.profileImageUrl ?? undefined,
+        companyWebsite: (user as any).companyWebsite ?? undefined,
       };
       
       // Regenerate session to ensure fresh session ID

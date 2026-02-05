@@ -16,6 +16,7 @@ declare global {
       firstName?: string;
       lastName?: string;
       profileImageUrl?: string;
+      companyWebsite?: string;
     }
   }
 }

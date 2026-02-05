@@ -56,12 +56,13 @@ export function registerAuthRoutes(app: Express): void {
   app.patch("/api/auth/profile", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      const { firstName, lastName, profileImageUrl } = req.body;
+      const { firstName, lastName, profileImageUrl, companyWebsite } = req.body;
       
       const updatedUser = await authStorage.updateUser(userId, {
         firstName,
         lastName,
-        profileImageUrl
+        profileImageUrl,
+        companyWebsite,
       });
       
       // Don't send password hash

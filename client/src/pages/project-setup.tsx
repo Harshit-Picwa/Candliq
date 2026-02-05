@@ -779,10 +779,6 @@ export default function ProjectSetupPage() {
           </CardHeader>
           <CardContent className="p-10 pt-0 space-y-8">
             <div className="space-y-4">
-              <div className="flex items-center gap-2 px-1 text-primary">
-                <Info className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-widest">SME Guidance (Optional)</span>
-              </div>
               <Textarea
                 value={smeNotes}
                 onChange={(e) => setSmeNotes(e.target.value)}
