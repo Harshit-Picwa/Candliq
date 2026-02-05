@@ -30,6 +30,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function ProjectCardSkeleton() {
   return (
@@ -85,6 +95,7 @@ export default function DashboardPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [deletingProjectId, setDeletingProjectId] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; title: string } | null>(null);
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -92,13 +103,16 @@ export default function DashboardPage() {
 
   const createProject = useMutation({
     mutationFn: async (title: string) => {
-      return apiRequest("POST", "/api/projects", { title });
+      const res = await apiRequest("POST", "/api/projects", { title });
+      return (await res.json()) as Project;
     },
-    onSuccess: () => {
+    onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setIsCreateOpen(false);
       setNewProjectTitle("");
       toast({ title: "Project created", description: "Your new project is ready." });
+      // After creating, go straight into Project Setup (step 1: Campaign Settings)
+      setLocation(`/projects/${project.id}?step=1`);
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create project.", variant: "destructive" });
@@ -133,6 +147,35 @@ export default function DashboardPage() {
       <div className="min-h-screen page-gradient">
         <Header />
         <main className="max-w-7xl mx-auto px-8 py-12">
+          <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+            <AlertDialogContent className="rounded-3xl border-border/40 shadow-2xl">
+              <AlertDialogHeader className="space-y-3">
+                <AlertDialogTitle className="text-2xl font-black tracking-tight">Delete this project?</AlertDialogTitle>
+                <AlertDialogDescription className="text-base font-medium leading-relaxed">
+                  This will permanently delete{" "}
+                  <span className="font-black text-foreground">{deleteConfirm?.title || "this project"}</span>. This action
+                  can’t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="gap-3 sm:gap-0">
+                <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="rounded-xl font-black bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={deleteProject.isPending}
+                  onClick={() => {
+                    if (!deleteConfirm) return;
+                    const id = deleteConfirm.id;
+                    setDeleteConfirm(null);
+                    setDeletingProjectId(id);
+                    deleteProject.mutate(id);
+                  }}
+                >
+                  {deleteProject.isPending ? "Deleting..." : "Yes, delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -238,8 +281,7 @@ export default function DashboardPage() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setDeletingProjectId(project.id);
-                            deleteProject.mutate(project.id);
+                            setDeleteConfirm({ id: project.id, title: project.title });
                           }}
                           data-testid={`button-delete-project-${project.id}`}
                         >

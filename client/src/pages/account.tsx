@@ -20,21 +20,31 @@ export default function AccountPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [profileImageUrl, setProfileImageUrl] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     if (user) {
       setFirstName(user.firstName || "");
       setLastName(user.lastName || "");
       setProfileImageUrl(user.profileImageUrl || "");
+      // After user data refreshes (e.g. after save), go back to view mode.
+      setIsEditing(false);
     }
   }, [user]);
 
+  const isDirty =
+    (firstName || "") !== (user?.firstName || "") ||
+    (lastName || "") !== (user?.lastName || "") ||
+    (profileImageUrl || "") !== (user?.profileImageUrl || "");
+
   const updateProfile = useMutation({
     mutationFn: async (data: { firstName: string; lastName: string; profileImageUrl?: string }) => {
-      return apiRequest("PATCH", "/api/auth/profile", data);
+      const res = await apiRequest("PATCH", "/api/auth/profile", data);
+      return await res.json();
     },
     onSuccess: (updatedUser) => {
       queryClient.setQueryData(["/api/auth/user"], updatedUser);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({ title: "Profile Updated", description: "Your account details have been saved successfully." });
     },
     onError: (error: any) => {
@@ -48,6 +58,7 @@ export default function AccountPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isEditing || !isDirty) return;
     updateProfile.mutate({ firstName, lastName, profileImageUrl: profileImageUrl || undefined });
   };
 
@@ -106,8 +117,9 @@ export default function AccountPage() {
                           id="avatar-url"
                           value={profileImageUrl}
                           onChange={(e) => setProfileImageUrl(e.target.value)}
+                          disabled={!isEditing}
                           placeholder="https://example.com/avatar.jpg"
-                          className="h-11 rounded-xl border-border/60 bg-background/50 focus-visible:ring-primary/20 transition-all px-4"
+                          className="h-11 rounded-xl border-border/60 bg-background/50 focus-visible:ring-primary/20 transition-all px-4 disabled:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-70"
                         />
                       </div>
                     </div>
@@ -120,8 +132,9 @@ export default function AccountPage() {
                         id="first-name"
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
+                        disabled={!isEditing}
                         required
-                        className="h-11 rounded-xl border-border/60 bg-background/50 focus-visible:ring-primary/20 transition-all px-4"
+                        className="h-11 rounded-xl border-border/60 bg-background/50 focus-visible:ring-primary/20 transition-all px-4 disabled:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-70"
                       />
                     </div>
                     <div className="space-y-2">
@@ -130,8 +143,9 @@ export default function AccountPage() {
                         id="last-name"
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
+                        disabled={!isEditing}
                         required
-                        className="h-11 rounded-xl border-border/60 bg-background/50 focus-visible:ring-primary/20 transition-all px-4"
+                        className="h-11 rounded-xl border-border/60 bg-background/50 focus-visible:ring-primary/20 transition-all px-4 disabled:bg-muted/20 disabled:cursor-not-allowed disabled:opacity-70"
                       />
                     </div>
                   </div>
@@ -171,26 +185,50 @@ export default function AccountPage() {
               </Card>
 
               <div className="flex justify-end items-center gap-4 py-4">
-                <Button variant="ghost" asChild className="rounded-xl font-bold px-6 h-12">
-                  <Link href="/dashboard">Cancel</Link>
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={updateProfile.isPending}
-                  className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all min-w-[160px]"
-                >
-                  {updateProfile.isPending ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
+                {!isEditing ? (
+                  <Button
+                    type="button"
+                    className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all min-w-[160px]"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    <User className="w-5 h-5" />
+                    Edit Details
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="rounded-xl font-bold px-6 h-12"
+                      onClick={() => {
+                        setFirstName(user?.firstName || "");
+                        setLastName(user?.lastName || "");
+                        setProfileImageUrl(user?.profileImageUrl || "");
+                        setIsEditing(false);
+                      }}
+                      disabled={updateProfile.isPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={updateProfile.isPending || !isDirty}
+                      className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all min-w-[160px] disabled:opacity-60 disabled:hover:scale-100"
+                    >
+                      {updateProfile.isPending ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-5 h-5" />
+                          Save Details
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </form>

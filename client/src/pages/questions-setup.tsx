@@ -122,6 +122,7 @@ export default function QuestionsSetupPage() {
   const [selectedForRefine, setSelectedForRefine] = useState<Set<string>>(new Set());
   const [isRefiningSelected, setIsRefiningSelected] = useState(false);
   const [showReviewConfirmModal, setShowReviewConfirmModal] = useState(false);
+  const [deleteQuestionConfirm, setDeleteQuestionConfirm] = useState<{ id: string; preview: string } | null>(null);
   const [timeAnalysis, setTimeAnalysis] = useState<{
     totalEstimatedMinutes: number;
     breakdown: Array<{
@@ -148,7 +149,8 @@ export default function QuestionsSetupPage() {
   // Mutation to fetch AI time analysis
   const analyzeTime = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", `/api/projects/${id}/analyze-time`);
+      const res = await apiRequest("POST", `/api/projects/${id}/analyze-time`);
+      return await res.json();
     },
     onSuccess: (data) => {
       setTimeAnalysis(data as any);
@@ -344,7 +346,18 @@ export default function QuestionsSetupPage() {
   };
 
   const deleteQuestion = (qId: string) => {
-    setQuestions(questions.filter(q => q.id !== qId));
+    setQuestions((prev) => prev.filter((q) => q.id !== qId));
+    setSelectedForRefine((prev) => {
+      const next = new Set(prev);
+      next.delete(qId);
+      return next;
+    });
+    setEditedQuestionIds((prev) => {
+      const next = new Set(prev);
+      next.delete(qId);
+      return next;
+    });
+    setSelectedQuestionId((prev) => (prev === qId ? null : prev));
     setHasChanges(true);
   };
 
@@ -1093,7 +1106,10 @@ export default function QuestionsSetupPage() {
                                                     className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
                                                     onClick={(e: React.MouseEvent) => {
                                                       e.stopPropagation();
-                                                      deleteQuestion(question.id);
+                                                      setDeleteQuestionConfirm({
+                                                        id: question.id,
+                                                        preview: (question.question || "").trim().slice(0, 120),
+                                                      });
                                                     }}
                                                   >
                                                     <Trash2 className="w-4 h-4" />
@@ -1434,6 +1450,43 @@ export default function QuestionsSetupPage() {
               }}
             >
               Yes, Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteQuestionConfirm} onOpenChange={(open) => !open && setDeleteQuestionConfirm(null)}>
+        <AlertDialogContent className="rounded-2xl max-w-lg">
+          <AlertDialogHeader className="space-y-3">
+            <AlertDialogTitle className="text-xl font-black tracking-tight">Delete this question?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                  This will permanently delete the question. This action can’t be undone.
+                </p>
+                {deleteQuestionConfirm?.preview ? (
+                  <div className="rounded-xl border border-border/50 bg-muted/30 p-4">
+                    <p className="text-sm font-semibold text-foreground/80 leading-relaxed">
+                      {deleteQuestionConfirm.preview}
+                      {deleteQuestionConfirm.preview.length >= 120 ? "…" : ""}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl font-black bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!deleteQuestionConfirm) return;
+                const delId = deleteQuestionConfirm.id;
+                setDeleteQuestionConfirm(null);
+                deleteQuestion(delId);
+              }}
+            >
+              Yes, delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
