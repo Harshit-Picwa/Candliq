@@ -41,4 +41,5 @@ prisma/           - Prisma schema and migrations
 - **Database Migrations**: `npx prisma migrate deploy`
 
 ## Recent Changes
+- 2026-02-06: Removed hardcoded TIME_ESTIMATES (2.0/2.5/3.0 min) - AI now dynamically estimates time per question based on actual complexity and scope. Updated Gemini model to gemini-2.5-pro with gemini-2.5-flash and gemini-2.0-flash fallbacks.
 - 2026-02-06: Initial Replit setup - configured database, installed dependencies, fixed OpenAI client initialization to be lazy (prevents crash when API key not set)

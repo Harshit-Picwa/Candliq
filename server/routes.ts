@@ -364,15 +364,10 @@ export async function registerRoutes(
 
       console.log(`[reanalyze-complexity] Re-analyzing ${questions.length} questions for project ${req.params.id}`);
       
-      // Time estimates per complexity level
-      const TIME_ESTIMATES = { simple: 2.0, moderate: 2.5, complex: 3.0 };
-      
-      // Auto-correct complexity based on objective metrics
       const correctedQuestions = questions.map((q: any) => {
         const text = q.question || "";
         const wordCount = text.split(/\s+/).filter((w: string) => w.length > 0).length;
         
-        // Count complexity escalators
         const andCount = (text.match(/\bAND\b/gi) || []).length;
         const orCount = (text.match(/\bOR\b/gi) || []).length;
         const versusCount = (text.match(/\bversus\b|\bvs\.?\b/gi) || []).length;
@@ -383,7 +378,6 @@ export async function registerRoutes(
         const originalComplexity = q.complexity || "moderate";
         let newComplexity: "simple" | "moderate" | "complex" = originalComplexity;
         
-        // Strict rules for complexity
         if (wordCount > 50 || connectorCount >= 2 || explainMultiple) {
           newComplexity = "complex";
         } else if (wordCount > 30 || connectorCount >= 1 || walkMeThrough) {
@@ -391,10 +385,8 @@ export async function registerRoutes(
             newComplexity = "moderate";
           }
         } else if (wordCount <= 25 && connectorCount === 0 && !walkMeThrough) {
-          // Can stay simple if it was already simple
         }
         
-        // Additional check for misclassified simple questions
         if (originalComplexity === "simple" && walkMeThrough && (andCount > 0 || orCount > 0)) {
           newComplexity = "complex";
         }
@@ -407,7 +399,7 @@ export async function registerRoutes(
         return {
           ...q,
           complexity: newComplexity,
-          estimatedMinutes: TIME_ESTIMATES[newComplexity],
+          estimatedMinutes: typeof q.estimatedMinutes === "number" ? q.estimatedMinutes : 2.5,
         };
       });
       

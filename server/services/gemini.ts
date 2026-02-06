@@ -13,16 +13,6 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey);
 
 /**
- * Time estimates per question complexity (in minutes)
- * These are used consistently across generation and analysis
- */
-const TIME_ESTIMATES = {
-  simple: 2.0,    // Quick technical checks, debugging steps
-  moderate: 2.5,  // Scenario-based, trade-off decisions
-  complex: 3.0,   // Deep architecture, optimization, system design
-} as const;
-
-/**
  * Word count thresholds for complexity classification
  * Used by autoCorrectComplexity for server-side validation
  */
@@ -92,12 +82,10 @@ function generateId() {
 }
 
 /**
- * Calculate total minutes from complexity counts using TIME_ESTIMATES
+ * Calculate total minutes from questions' AI-assigned estimatedMinutes
  */
-function calculateTotalMinutes(counts: ComplexityCounts): number {
-  return (counts.simple * TIME_ESTIMATES.simple) +
-         (counts.moderate * TIME_ESTIMATES.moderate) +
-         (counts.complex * TIME_ESTIMATES.complex);
+function calculateTotalMinutesFromQuestions(questions: Array<{ estimatedMinutes?: number }>): number {
+  return questions.reduce((sum, q) => sum + (q.estimatedMinutes || 2.5), 0);
 }
 
 /**
@@ -114,8 +102,8 @@ function countByComplexity(questions: Array<{ complexity?: string }>): Complexit
 /**
  * Generate standardized time summary string
  */
-function generateTimeSummary(counts: ComplexityCounts, totalMinutes: number): string {
-  return `The screening consists of ${counts.simple} simple, ${counts.moderate} moderate, and ${counts.complex} complex questions, totaling ${totalMinutes.toFixed(1)} minutes of pure Q&A time. This calculation strictly covers the question-and-answer period and excludes introductions, follow-up probes, or closing remarks.`;
+function generateTimeSummary(questionCount: number, totalMinutes: number): string {
+  return `The screening consists of ${questionCount} questions, totaling ${totalMinutes.toFixed(1)} minutes of pure Q&A time. This calculation strictly covers the question-and-answer period and excludes introductions, follow-up probes, or closing remarks.`;
 }
 
 /**
@@ -449,12 +437,11 @@ function normalizeQuestions(
         ? q.competencyId
         : safeCompetencyIds[rr++ % safeCompetencyIds.length];
 
-    // Validate and preserve complexity from AI response
-    let complexity = q.complexity || "moderate";
-    if (!["simple", "moderate", "complex"].includes(complexity)) {
-      complexity = "moderate";
+    let complexity = q.complexity || undefined;
+    if (complexity && !["simple", "moderate", "complex"].includes(complexity)) {
+      complexity = undefined;
     }
-    const estimatedMinutes = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES];
+    const estimatedMinutes = typeof q.estimatedMinutes === "number" ? q.estimatedMinutes : 2.5;
 
     return {
       ...q,
@@ -491,9 +478,7 @@ function calculateMaxQuestions(interviewDuration?: number): number {
     return 6; // Default to 6 questions for 15 minute Q&A screening time
   }
 
-  // Recommended mix: 40% simple (2.0), 40% moderate (2.5), 20% complex (3.0)
-  const avgMinutesPerQuestion = (0.4 * TIME_ESTIMATES.simple) + (0.4 * TIME_ESTIMATES.moderate) + (0.2 * TIME_ESTIMATES.complex);
-  // This gives us: (0.4 * 2.0) + (0.4 * 2.5) + (0.2 * 3.0) = 0.8 + 1.0 + 0.6 = 2.4 minutes average
+  const avgMinutesPerQuestion = 2.5;
   
   const maxQuestions = Math.max(1, Math.floor(interviewDuration / avgMinutesPerQuestion));
   
@@ -522,7 +507,6 @@ function calculateBufferQuestions(mainQuestions: number): number {
  */
 function autoCorrectComplexity(question: { question?: string; complexity?: string }): { 
   complexity: "simple" | "moderate" | "complex"; 
-  estimatedMinutes: number; 
   corrected: boolean 
 } {
   const text = question.question || "";
@@ -576,7 +560,6 @@ function autoCorrectComplexity(question: { question?: string; complexity?: strin
   
   return {
     complexity: newComplexity,
-    estimatedMinutes: TIME_ESTIMATES[newComplexity],
     corrected
   };
 }
@@ -656,10 +639,9 @@ function validateTimelineFit(
   context: string
 ): void {
   const mandatory = questions.filter(q => q.isMandatory !== false);
-  const counts = countByComplexity(mandatory as Array<{ complexity?: string }>);
-  const estimatedTime = calculateTotalMinutes(counts);
+  const estimatedTime = calculateTotalMinutesFromQuestions(mandatory);
   
-  geminiLog.info(`${context}: ${mandatory.length} Q&A questions (${counts.simple}S, ${counts.moderate}M, ${counts.complex}C), estimated ${estimatedTime.toFixed(1)} min (Q&A budget: ${interviewDuration} min, excludes intro/follow-ups)`);
+  geminiLog.info(`${context}: ${mandatory.length} Q&A questions, estimated ${estimatedTime.toFixed(1)} min (Q&A budget: ${interviewDuration} min, excludes intro/follow-ups)`);
   
   if (estimatedTime > interviewDuration) {
     geminiLog.warn(`${context}: Exceeds Q&A time budget by ${(estimatedTime - interviewDuration).toFixed(1)} min`);
@@ -679,61 +661,29 @@ function validateComplexityDistribution(
 ) {
   const mandatory = questions.filter(q => q.isMandatory !== false);
   
-  // Use AI-assigned complexity (already validated and set)
-  type ClassifiedQuestion = ScreeningQuestion & { estimatedTime: number };
-  const classified: ClassifiedQuestion[] = mandatory.map((q) => {
-    const complexity = (q as { complexity?: string }).complexity || "moderate";
-    const validComplexity = ["simple", "moderate", "complex"].includes(complexity) 
-      ? complexity as keyof typeof TIME_ESTIMATES 
-      : "moderate";
-    return {
-      ...q,
-      complexity: validComplexity,
-      estimatedTime: TIME_ESTIMATES[validComplexity],
-    } as ClassifiedQuestion;
-  });
+  const totalTime = calculateTotalMinutesFromQuestions(mandatory);
   
-  // Count by complexity using utility function
-  const counts = countByComplexity(classified as Array<{ complexity?: string }>);
-  
-  // Use adaptive distribution based on screening time
-  const target = getAdaptiveComplexityDistribution(screeningTime, maxQuestions);
-  
-  const totalTime = calculateTotalMinutes(counts);
-  
-  geminiLog.info(`AI complexity distribution: ${counts.simple}S/${target.simple}, ${counts.moderate}M/${target.moderate}, ${counts.complex}C/${target.complex}`);
   geminiLog.info(`Total Q&A time: ${totalTime.toFixed(1)}/${screeningTime} min (excludes intro/follow-ups)`);
   
-  if (totalTime <= screeningTime && classified.length <= maxQuestions) {
+  if (totalTime <= screeningTime && mandatory.length <= maxQuestions) {
     geminiLog.success(`Q&A questions fit within time budget`);
-    return classified;
+    return mandatory;
   }
   
-  // If over budget, remove questions starting with complex ones
   geminiLog.warn(`Adjusting Q&A questions to fit time budget`);
-  let adjusted = [...classified];
-  const adjustedCounts = { ...counts };
+  let adjusted = [...mandatory];
   
-  while (calculateTotalMinutes(countByComplexity(adjusted as Array<{ complexity?: string }>)) > screeningTime || adjusted.length > maxQuestions) {
-    // Remove in order: complex first, then moderate, then simple
-    const complexIdx = adjusted.findIndex(q => (q as { complexity?: string }).complexity === "complex");
-    const moderateIdx = adjusted.findIndex(q => (q as { complexity?: string }).complexity === "moderate");
-    
-    if (complexIdx !== -1 && adjustedCounts.complex > target.complex) {
-      adjusted.splice(complexIdx, 1);
-      adjustedCounts.complex--;
-    } else if (moderateIdx !== -1 && adjustedCounts.moderate > target.moderate) {
-      adjusted.splice(moderateIdx, 1);
-      adjustedCounts.moderate--;
-    } else if (adjusted.length > 0) {
-      adjusted.pop(); // Remove last question
+  while (calculateTotalMinutesFromQuestions(adjusted) > screeningTime || adjusted.length > maxQuestions) {
+    if (adjusted.length > 0) {
+      const highestTimeIdx = adjusted.reduce((maxIdx, q, idx, arr) => 
+        (q.estimatedMinutes || 2.5) > (arr[maxIdx].estimatedMinutes || 2.5) ? idx : maxIdx, 0);
+      adjusted.splice(highestTimeIdx, 1);
     } else {
       break;
     }
   }
   
-  const finalCounts = countByComplexity(adjusted as Array<{ complexity?: string }>);
-  const finalTime = calculateTotalMinutes(finalCounts);
+  const finalTime = calculateTotalMinutesFromQuestions(adjusted);
   geminiLog.info(`Adjusted to ${adjusted.length} Q&A questions, ${finalTime.toFixed(1)} min Q&A time`);
   
   return adjusted;
@@ -946,28 +896,15 @@ Only output valid JSON. No markdown code blocks.`;
       geminiLog.info(`AI Breakdown: ${aiTimeAnalysis.summary || JSON.stringify(aiTimeAnalysis.breakdown)}`);
     }
 
-    // Log the initial count from AI
     const mandatoryQuestions = questions.filter(q => q.isMandatory !== false);
     const bufferQuestionsGenerated = questions.filter(q => q.isMandatory === false);
     
-    geminiLog.info(`AI generated ${questions.length} total questions (target: ${totalQuestions})`);
-    geminiLog.info(`- Main questions: ${mandatoryQuestions.length} (target: ${maxQuestions})`);
-    geminiLog.info(`- Buffer questions: ${bufferQuestionsGenerated.length} (target: ${bufferQuestions})`);
+    geminiLog.info(`AI generated ${questions.length} total questions`);
+    geminiLog.info(`- Main questions: ${mandatoryQuestions.length}`);
+    geminiLog.info(`- Buffer questions: ${bufferQuestionsGenerated.length}`);
     
-    // Use complexity from AI response (already validated in parseResponse)
-    const complexityCounts = {
-      simple: mandatoryQuestions.filter((q: ScreeningQuestion) => q.complexity === "simple").length,
-      moderate: mandatoryQuestions.filter((q: ScreeningQuestion) => q.complexity === "moderate").length,
-      complex: mandatoryQuestions.filter((q: ScreeningQuestion) => q.complexity === "complex").length,
-    };
-    
-    // Calculate time from AI-assigned complexity
-    const actualTime = (complexityCounts.simple * TIME_ESTIMATES.simple) +
-                       (complexityCounts.moderate * TIME_ESTIMATES.moderate) +
-                       (complexityCounts.complex * TIME_ESTIMATES.complex);
-    
-    geminiLog.info(`AI-assigned complexity: ${complexityCounts.simple} simple, ${complexityCounts.moderate} moderate, ${complexityCounts.complex} complex`);
-    geminiLog.info(`Calculated Q&A time: (${complexityCounts.simple}×2.0) + (${complexityCounts.moderate}×2.5) + (${complexityCounts.complex}×3.0) = ${actualTime.toFixed(1)} min`);
+    const actualTime = calculateTotalMinutesFromQuestions(mandatoryQuestions);
+    geminiLog.info(`AI-estimated Q&A time: ${actualTime.toFixed(1)} min`);
     geminiLog.info(`Q&A budget: ${screeningTime} min (excludes intro/follow-ups)`);
 
     questions = normalizeQuestions(competencies, questions);
@@ -1023,41 +960,19 @@ Respond with ONLY the full JSON object in the same format. No markdown.`;
       }
     }
 
-    // Reorder and enforce final time budget
     questions = questions.map((q, idx) => ({ ...q, order: idx + 1 }));
     questions = enforceTimeBudget(questions, interviewDuration);
 
     const finalMandatory = questions.filter(q => q.isMandatory !== false);
     const finalBuffer = questions.filter(q => q.isMandatory === false);
+    const finalEstimatedTime = calculateTotalMinutesFromQuestions(finalMandatory);
     
-    geminiLog.info(`Final question count after all processing: ${questions.length} total (${finalMandatory.length} main + ${finalBuffer.length} buffer)`);
-    geminiLog.info(`Target was: ${totalQuestions} total (${maxQuestions} main + ${bufferQuestions} buffer)`);
+    geminiLog.info(`Final: ${finalMandatory.length} main + ${finalBuffer.length} buffer = ${questions.length} total`);
     
-    // Calculate final time estimate based on AI-assigned complexity
-    const finalComplexityCounts = {
-      simple: finalMandatory.filter((q: ScreeningQuestion) => q.complexity === "simple").length,
-      moderate: finalMandatory.filter((q: ScreeningQuestion) => q.complexity === "moderate").length,
-      complex: finalMandatory.filter((q: ScreeningQuestion) => q.complexity === "complex").length,
-    };
-    
-    const finalEstimatedTime = (finalComplexityCounts.simple * TIME_ESTIMATES.simple) +
-                               (finalComplexityCounts.moderate * TIME_ESTIMATES.moderate) +
-                               (finalComplexityCounts.complex * TIME_ESTIMATES.complex);
-    
-    geminiLog.info(`Final AI-assigned complexity: ${finalComplexityCounts.simple}S + ${finalComplexityCounts.moderate}M + ${finalComplexityCounts.complex}C`);
-    
-    if (finalMandatory.length !== maxQuestions) {
-      geminiLog.warn(`WARNING: Main question count (${finalMandatory.length}) does not match target (${maxQuestions})`);
-    }
-    if (finalBuffer.length !== bufferQuestions) {
-      geminiLog.warn(`INFO: Buffer question count (${finalBuffer.length}) differs from target (${bufferQuestions})`);
-    }
     if (finalEstimatedTime > screeningTime) {
-      geminiLog.warn(`WARNING: Q&A time (${finalEstimatedTime.toFixed(1)} min) exceeds screening budget (${screeningTime} min Q&A only, excludes intro/follow-ups)`);
-      geminiLog.warn(`Breakdown: (${finalComplexityCounts.simple} × 2.0) + (${finalComplexityCounts.moderate} × 2.5) + (${finalComplexityCounts.complex} × 3.0) = ${finalEstimatedTime.toFixed(1)} min`);
+      geminiLog.warn(`Q&A time (${finalEstimatedTime.toFixed(1)} min) exceeds budget (${screeningTime} min)`);
     } else {
-      geminiLog.success(`Q&A time budget validated: ${finalEstimatedTime.toFixed(1)} min / ${screeningTime} min Q&A budget (excludes intro/follow-ups)`);
-      geminiLog.info(`Breakdown: (${finalComplexityCounts.simple} × 2.0) + (${finalComplexityCounts.moderate} × 2.5) + (${finalComplexityCounts.complex} × 3.0) = ${finalEstimatedTime.toFixed(1)} min`);
+      geminiLog.success(`Q&A time validated: ${finalEstimatedTime.toFixed(1)} min / ${screeningTime} min budget`);
     }
 
     return { competencies, questions, history: updatedHistory };
@@ -1154,14 +1069,12 @@ async function extractCompetenciesAndQuestionsBatched(
           complexity = "moderate";
         }
         
-        const corrected = autoCorrectComplexity({ question: q.question, complexity });
-        
         return {
           id: q.id || `q_${generateId()}`,
           competencyId: q.competencyId || competencies[idx % competencies.length]?.id || "comp_1",
           question: q.question,
-          complexity: corrected.complexity,
-          estimatedMinutes: corrected.estimatedMinutes,
+          complexity,
+          estimatedMinutes: typeof q.estimatedMinutes === "number" ? q.estimatedMinutes : 2.5,
           rubric: q.rubric || { typicalReasoning: "", goodSignals: [], moderateSignals: [], poorSignals: [], notes: "" },
           isMandatory: allQuestions.length + idx < maxQuestions, // First maxQuestions are mandatory
           order: allQuestions.length + idx + 1,
@@ -1195,8 +1108,7 @@ async function extractCompetenciesAndQuestionsBatched(
   // Enforce time budget
   allQuestions = enforceTimeBudget(allQuestions, interviewDuration);
   
-  const finalCounts = countByComplexity(allQuestions.filter(q => q.isMandatory) as Array<{ complexity?: string }>);
-  const finalTime = calculateTotalMinutes(finalCounts);
+  const finalTime = calculateTotalMinutesFromQuestions(allQuestions.filter(q => q.isMandatory));
   
   geminiLog.success(`Batched generation complete: ${allQuestions.length} questions, ${finalTime.toFixed(1)} min Q&A time`);
   
@@ -1234,13 +1146,9 @@ ${existingQuestionsSection}
 REQUIREMENTS:
 1. Extract 3-5 key competencies from the JD
 2. Generate exactly ${questionsNeeded} scenario-based questions
-3. For EACH question, assign complexity: "simple" (2.0 min), "moderate" (2.5 min), or "complex" (3.0 min)
+3. For EACH question, estimate realistic time in minutes (asking + thinking + answering). Do NOT use fixed values - estimate based on actual question complexity and scope.
 4. Include detailed rubrics with exactly 5 signals each (goodSignals, moderateSignals, poorSignals)
-
-COMPLEXITY RULES:
-- SIMPLE (≤25 words, 1 concept): "How do you debug X?"
-- MODERATE (≤40 words, 2 concepts): "X vs Y - what factors?"
-- COMPLEX (≤60 words, 3+ concepts): "Design X considering A, B, and C"
+5. The TOTAL time for all mandatory questions must fit within ${screeningTime} minutes.
 
 Respond with JSON:
 {
@@ -1249,8 +1157,7 @@ Respond with JSON:
     "id": "q_1",
     "competencyId": "comp_1",
     "question": "...",
-    "complexity": "simple" | "moderate" | "complex",
-    "estimatedMinutes": 2.0 | 2.5 | 3.0,
+    "estimatedMinutes": <realistic time estimate>,
     "rubric": {
       "typicalReasoning": "...",
       "goodSignals": ["...", "...", "...", "...", "..."],
@@ -1293,13 +1200,8 @@ ${existingList}
 REQUIREMENTS:
 1. Generate exactly ${questionsNeeded} NEW unique questions
 2. Distribute across the existing competencies
-3. Assign complexity: "simple" (2.0 min), "moderate" (2.5 min), or "complex" (3.0 min)
+3. For EACH question, estimate realistic time in minutes (asking + thinking + answering). Do NOT use fixed values.
 4. Include detailed rubrics with exactly 5 signals each
-
-COMPLEXITY RULES:
-- SIMPLE (≤25 words, 1 concept): "How do you debug X?"
-- MODERATE (≤40 words, 2 concepts): "X vs Y - what factors?"
-- COMPLEX (≤60 words, 3+ concepts): "Design X considering A, B, and C"
 
 Respond with JSON (NO competencies array, only questions):
 {
@@ -1307,8 +1209,7 @@ Respond with JSON (NO competencies array, only questions):
     "id": "q_${existingQuestions.length + 1}",
     "competencyId": "comp_1",
     "question": "...",
-    "complexity": "simple" | "moderate" | "complex",
-    "estimatedMinutes": 2.0 | 2.5 | 3.0,
+    "estimatedMinutes": <realistic time estimate>,
     "rubric": { ... },
     "isMandatory": true,
     "order": ${existingQuestions.length + 1}
@@ -1965,7 +1866,6 @@ export async function analyzeQuestionTime(
     questionId: string;
     questionText: string;
     estimatedMinutes: number;
-    complexity: "simple" | "moderate" | "complex";
     reasoning: string;
   }>;
   summary: string;
@@ -1979,41 +1879,34 @@ export async function analyzeQuestionTime(
       totalEstimatedMinutes: 0,
       breakdown: [],
       summary: "No Q&A screening questions are currently included in the interview.",
-      recommendation: "Add planned Q&A questions to get a time estimate (excludes intro/follow-ups/outro).",
+      recommendation: "Add planned Q&A questions to get a time estimate.",
       withinBudget: true,
     };
   }
 
-  // Check if ALL questions already have AI-assigned complexity
-  const allHaveComplexity = includedQuestions.every((q: any) => 
-    q.complexity && ["simple", "moderate", "complex"].includes(q.complexity)
+  const allHaveEstimates = includedQuestions.every((q: any) => 
+    typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0
   );
   
-  // If all questions have pre-assigned complexity, use them directly without AI call
-  if (allHaveComplexity) {
-    geminiLog.info("Using pre-assigned complexity from question generation (no AI call needed)");
+  if (allHaveEstimates) {
+    geminiLog.info("Using AI-estimated times from question generation (no additional AI call needed)");
     
     const breakdown = includedQuestions.map((q) => {
-      const qWithComplexity = q as ScreeningQuestion & { complexity: "simple" | "moderate" | "complex" };
       return {
         questionId: q.id,
         questionText: q.question.substring(0, 60) + (q.question.length > 60 ? "..." : ""),
-        estimatedMinutes: TIME_ESTIMATES[qWithComplexity.complexity],
-        complexity: qWithComplexity.complexity,
-        reasoning: `AI-assigned during question generation: ${qWithComplexity.complexity} question`,
+        estimatedMinutes: q.estimatedMinutes || 2.5,
+        reasoning: `AI-estimated during question generation: ${(q.estimatedMinutes || 2.5).toFixed(1)} min`,
       };
     });
     
-    const counts = countByComplexity(breakdown);
-    const totalEstimatedMinutes = calculateTotalMinutes(counts);
+    const totalEstimatedMinutes = breakdown.reduce((sum, b) => sum + b.estimatedMinutes, 0);
     const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     
-    // Use utility functions for summary and recommendation
-    const summary = generateTimeSummary(counts, totalEstimatedMinutes);
+    const summary = generateTimeSummary(includedQuestions.length, totalEstimatedMinutes);
     const recommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
     
-    geminiLog.info(`Pre-assigned complexity analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
-    geminiLog.info(`Breakdown: ${counts.simple} simple × 2.0 + ${counts.moderate} moderate × 2.5 + ${counts.complex} complex × 3.0 = ${totalEstimatedMinutes.toFixed(1)} min`);
+    geminiLog.info(`Time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
     
     return {
       totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
@@ -2024,8 +1917,7 @@ export async function analyzeQuestionTime(
     };
   }
   
-  // If questions don't have pre-assigned complexity, ask AI to analyze
-  geminiLog.info("Questions don't have pre-assigned complexity, asking AI to analyze");
+  geminiLog.info("Questions don't have time estimates, asking AI to analyze");
   
   const questionsText = includedQuestions.map((q: any, i) => {
     const comp = competencies.find(c => c.id === q.competencyId);
@@ -2034,70 +1926,41 @@ export async function analyzeQuestionTime(
 
   const prompt = `You are an expert interview consultant analyzing screening questions for a technical interview.
 
-TASK: Estimate the time needed for each question based on its complexity and scope.
+TASK: Estimate the time needed for each question and provide an analysis.
 
 QUESTIONS TO ANALYZE:
 ${questionsText}
 
 CONFIGURED SCREENING TIME: ${configuredScreeningTime} minutes
 
-**IMPORTANT:** This ${configuredScreeningTime} minutes is EXCLUSIVELY for the planned Q&A screening questions listed above.
-NOT included in this time: introduction, follow-up questions, or closing remarks (those have separate time allocation).
-Your analysis should ONLY estimate time for the planned questions listed.
+For each question, estimate in minutes how long it will realistically take including:
+- Time for the interviewer to ask the question
+- Time for the candidate to think and formulate their response
+- Time for the candidate to deliver their answer
 
-TIME STANDARDS (use these EXACT values):
-- **SIMPLE questions** (debugging steps, tool usage, specific techniques): **EXACTLY 2.0 minutes**
-  - Ask (20s) + Candidate answers with specific steps (90s) + Transition (10s)
-  - Examples: "Walk me through debugging a slow API", "What command checks PostgreSQL locks?"
-  
-- **MODERATE questions** (scenarios, trade-offs, problem-solving): **EXACTLY 2.5 minutes**
-  - Ask (20s) + Candidate explains approach with reasoning (120s) + Transition (10s)
-  - Examples: "Choose between Redis vs Memcached for caching", "Your query is slow - what's your diagnostic approach?"
-  
-- **COMPLEX questions** (architecture, optimization, design decisions): **EXACTLY 3.0 minutes**
-  - Ask (30s) + Candidate designs solution with trade-offs (135s) + Transition (15s)
-  - Examples: "Design a caching strategy for high-traffic API", "Optimize database schema for scalability"
-
-CLASSIFICATION CRITERIA:
-- **SIMPLE**: Asks for specific debugging steps, tool commands, or concrete techniques. Candidate lists steps or describes a process.
-- **MODERATE**: Presents a scenario requiring trade-off analysis, problem-solving, or approach explanation. Candidate must reason through options.
-- **COMPLEX**: Requires architectural thinking, system design, optimization strategy, or multi-faceted decisions. Candidate must design a solution.
-
-For each question, classify it as simple/moderate/complex and assign the EXACT time value (2.0, 2.5, or 3.0).
+Be realistic with estimates. Simple direct questions take less time, while complex scenario-based questions requiring detailed explanations take more time.
 
 Respond with a JSON object:
 {
-  "totalEstimatedMinutes": <MUST equal sum of all estimatedMinutes in breakdown>,
+  "totalEstimatedMinutes": <number - sum of all estimatedMinutes in breakdown>,
   "breakdown": [
     {
-      "questionId": "q_1",
-      "questionText": "<first 60 chars>...",
-      "estimatedMinutes": 2.0 | 2.5 | 3.0,
-      "complexity": "simple" | "moderate" | "complex",
-      "reasoning": "<1 sentence explaining WHY this complexity level>"
+      "questionId": "<question_id>",
+      "questionText": "<first 60 chars of question>...",
+      "estimatedMinutes": <number - realistic estimate>,
+      "reasoning": "<brief explanation of why this estimate>"
     }
   ],
-  "summary": "<MUST include exact counts that match breakdown: X simple (2.0 min each), Y moderate (2.5 min each), Z complex (3.0 min each). Total must match X+Y+Z and totalEstimatedMinutes must match (X×2.0)+(Y×2.5)+(Z×3.0). Excludes intro/follow-ups.>",
-  "recommendation": "<actionable recommendation based on Q&A time budget>",
-  "withinBudget": <true if totalEstimatedMinutes <= ${configuredScreeningTime}, false otherwise>
+  "summary": "<2-3 sentence summary of the time analysis>",
+  "recommendation": "<actionable recommendation based on time budget>",
+  "withinBudget": <boolean - true if total <= configured time>
 }
-
-CRITICAL VALIDATION REQUIREMENTS:
-1. Use ONLY 2.0, 2.5, or 3.0 for estimatedMinutes (no other values)
-2. totalEstimatedMinutes MUST equal the exact sum of all breakdown[].estimatedMinutes
-3. summary MUST show counts that match the breakdown array exactly:
-   - Count how many questions have complexity="simple" → that's your simple count
-   - Count how many questions have complexity="moderate" → that's your moderate count  
-   - Count how many questions have complexity="complex" → that's your complex count
-   - simple_count + moderate_count + complex_count MUST equal ${includedQuestions.length} (total questions)
-4. Time calculation in summary: (simple_count × 2.0) + (moderate_count × 2.5) + (complex_count × 3.0) = totalEstimatedMinutes
-5. VERIFY your math before responding!
 
 Only output valid JSON. No markdown code blocks.`;
 
   try {
     if (!apiKey) {
-      geminiLog.warn("API key not set, using fallback classification");
+      geminiLog.warn("API key not set, using fallback estimation");
       throw new Error("API key not set");
     }
 
@@ -2111,93 +1974,48 @@ Only output valid JSON. No markdown code blocks.`;
 
     const parsed = safeJsonParse<any>(jsonMatch[0], "time analysis");
 
-    // Map the breakdown to include actual question IDs and validate time estimates
     const breakdown = (parsed.breakdown || []).map((item: any, idx: number) => {
-      const estimatedMinutes = Number(item.estimatedMinutes);
-      let complexity = item.complexity || "moderate";
-      
-      // Validate complexity is one of the allowed values
-      if (!["simple", "moderate", "complex"].includes(complexity)) {
-        complexity = "moderate";
-      }
-      
-      // Enforce exact time values based on complexity (2.0, 2.5, or 3.0)
-      // Always use the standard time for the complexity level
-      const correctedTime = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES];
-      
       return {
         questionId: includedQuestions[idx]?.id || item.questionId,
         questionText: item.questionText || includedQuestions[idx]?.question?.substring(0, 60) + "...",
-        estimatedMinutes: correctedTime,
-        complexity: complexity as "simple" | "moderate" | "complex",
+        estimatedMinutes: typeof item.estimatedMinutes === "number" ? Math.round(item.estimatedMinutes * 10) / 10 : 2.5,
         reasoning: item.reasoning || "Standard interview question",
       };
     });
 
-    // Server-side validation: count EXACTLY from the breakdown array using utility function
-    const counts = countByComplexity(breakdown);
-    const totalEstimatedMinutes = calculateTotalMinutes(counts);
+    const totalEstimatedMinutes = breakdown.reduce((sum: number, b: any) => sum + b.estimatedMinutes, 0);
     const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     
-    // Verify total questions match
-    const totalQuestionCount = counts.simple + counts.moderate + counts.complex;
-    if (totalQuestionCount !== includedQuestions.length) {
-      geminiLog.warn(`Question count mismatch: breakdown has ${totalQuestionCount}, expected ${includedQuestions.length}`);
-    }
-    
-    geminiLog.info(`AI time analysis (validated): ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
-    geminiLog.info(`Breakdown: ${counts.simple} simple × 2.0 + ${counts.moderate} moderate × 2.5 + ${counts.complex} complex × 3.0 = ${totalEstimatedMinutes.toFixed(1)} min`);
-
-    // Use utility functions for summary and recommendation
-    const accurateSummary = generateTimeSummary(counts, totalEstimatedMinutes);
-    const accurateRecommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
+    geminiLog.info(`AI time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min, within budget: ${withinBudget}`);
 
     return {
       totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
       breakdown,
-      summary: accurateSummary,
-      recommendation: accurateRecommendation,
+      summary: parsed.summary || generateTimeSummary(includedQuestions.length, totalEstimatedMinutes),
+      recommendation: parsed.recommendation || generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime),
       withinBudget,
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     geminiLog.error(`Time analysis error, using fallback: ${errorMessage}`);
     
-    // Fallback: use AI-assigned complexity if available, otherwise classify
     const breakdown = includedQuestions.map((q) => {
-      const qAny = q as ScreeningQuestion & { complexity?: string };
-      // Prefer AI-assigned complexity, fallback to deterministic classification
-      let complexity = qAny.complexity;
-      if (!complexity || !["simple", "moderate", "complex"].includes(complexity)) {
-        complexity = classifyQuestionComplexity(q.question);
-      }
-      const validComplexity = complexity as keyof typeof TIME_ESTIMATES;
-      const estimatedMinutes = TIME_ESTIMATES[validComplexity];
-      
-      const reasoningMap = {
-        simple: "Quick debugging/troubleshooting question (2.0 min)",
-        moderate: "Scenario-based question requiring analysis (2.5 min)",
-        complex: "Deep-dive architecture/optimization question (3.0 min)",
-      };
-      
+      const estimatedMinutes = (q as any).estimatedMinutes || 2.5;
       return {
         questionId: q.id,
         questionText: q.question.substring(0, 60) + (q.question.length > 60 ? "..." : ""),
         estimatedMinutes,
-        complexity: validComplexity,
-        reasoning: reasoningMap[validComplexity],
+        reasoning: (q as any).estimatedMinutes ? "Using estimate from question generation" : "Default estimate (2.5 min per question)",
       };
     });
     
-    const counts = countByComplexity(breakdown);
-    const totalEstimatedMinutes = calculateTotalMinutes(counts);
+    const totalEstimatedMinutes = breakdown.reduce((sum, b) => sum + b.estimatedMinutes, 0);
     const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     
-    // Use utility functions for summary and recommendation
-    const summary = generateTimeSummary(counts, totalEstimatedMinutes);
+    const summary = generateTimeSummary(includedQuestions.length, totalEstimatedMinutes);
     const recommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
     
-    geminiLog.info(`Fallback time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min (${counts.simple}S + ${counts.moderate}M + ${counts.complex}C)`);
+    geminiLog.info(`Fallback time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
     
     return {
       totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
