@@ -2,10 +2,20 @@ import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import type { TranscriptEntry } from "@shared/schema";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-  baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-});
+let openai: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not set. Please configure your API key in the environment variables.");
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+    });
+  }
+  return openai;
+}
 
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const file = await toFile(audioBuffer, "audio.webm", {
@@ -13,7 +23,7 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   });
   
   try {
-    const response = await openai.audio.transcriptions.create({
+    const response = await getOpenAIClient().audio.transcriptions.create({
       model: "gpt-4o-mini-transcribe",
       file: file,
       response_format: "json",
