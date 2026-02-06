@@ -303,28 +303,16 @@ export async function registerRoutes(
         (project.aiChatHistoryJson || []) as any
       );
 
-      questions[questionIndex] = refinedQuestion;
-
-      // Run time analysis on all questions to update estimates after refinement
-      const competencies = (project.competencyRubricJson || []) as Competency[];
-      const configuredScreeningTime = project.interviewDuration || 15;
-      let finalQuestions = questions;
-      try {
-        console.log(`[refine-question] Running time analysis after refining question ${questionId}`);
-        const analysis = await analyzeQuestionTime(questions, competencies, configuredScreeningTime, true);
-        finalQuestions = questions.map(q => {
-          const analyzed = analysis.breakdown.find(b => b.questionId === q.id);
-          const newEstimate = analyzed && typeof analyzed.estimatedMinutes === "number" ? analyzed.estimatedMinutes : (q as any).estimatedMinutes;
-          const newMandatory = analysis.includedQuestionIds ? analysis.includedQuestionIds.includes(q.id) : q.isMandatory;
-          return { ...q, estimatedMinutes: newEstimate, isMandatory: newMandatory };
-        });
-        console.log("[refine-question] Time analysis complete");
-      } catch (analysisError: any) {
-        console.warn("[refine-question] Time analysis failed, saving without updated estimates:", analysisError?.message);
-      }
+      const originalQuestion = questions[questionIndex];
+      questions[questionIndex] = {
+        ...refinedQuestion,
+        isMandatory: originalQuestion.isMandatory,
+        estimatedMinutes: (originalQuestion as any).estimatedMinutes,
+      };
+      console.log(`[refine-question] Preserved original estimatedMinutes=${(originalQuestion as any).estimatedMinutes} and isMandatory=${originalQuestion.isMandatory} on refined question`);
 
       const updated = await storage.updateProject(project.id, {
-        screeningQuestionsJson: finalQuestions,
+        screeningQuestionsJson: questions,
         aiChatHistoryJson: history as any,
       });
 

@@ -348,8 +348,10 @@ export default function QuestionsSetupPage() {
       setSelectedForRefine(new Set());
 
       setAiAnalysisFailed(false);
-      setAiAnalysisComplete(false);
-      autoAnalysisTriggered.current = false;
+      if (!variables.questionId) {
+        setAiAnalysisComplete(false);
+        autoAnalysisTriggered.current = false;
+      }
 
       let title = "Questions refined";
       if (variables.questionId) title = "Question refined";
