@@ -2024,43 +2024,51 @@ export async function analyzeQuestionTime(
     };
   }
 
-  geminiLog.info("Calling Gemini for independent time analysis (ignoring stored estimates)");
+  geminiLog.info("Calling Gemini 2.5 Pro (thinking mode) for independent time analysis");
   
   const questionsText = includedQuestions.map((q: any, i) => {
     const comp = competencies.find(c => c.id === q.competencyId);
-    return `${i + 1}. [${comp?.name || "General"}] ${q.question}`;
-  }).join("\n");
+    return `Question ${i + 1} (id: ${q.id}) [${comp?.name || "General"}]:\n"${q.question}"`;
+  }).join("\n\n");
 
-  const prompt = `You are an expert interview consultant analyzing screening questions for a technical interview.
+  const prompt = `You are an expert interview time analyst. Your job is to provide ACCURATE, REALISTIC time estimates for screening interview questions.
 
-TASK: Estimate the time needed for each question and provide an analysis.
+TASK: Independently analyze each question and estimate how long it will REALISTICALLY take in a live interview setting.
 
 QUESTIONS TO ANALYZE:
 ${questionsText}
 
-CONFIGURED SCREENING TIME: ${configuredScreeningTime} minutes
+CONFIGURED SCREENING TIME: ${configuredScreeningTime} minutes (this is the Q&A-only time budget)
 
-For each question, estimate in minutes how long it will realistically take including:
-- Time for the interviewer to ask the question
-- Time for the candidate to think and formulate their response
-- Time for the candidate to deliver their answer
+For EACH question, think carefully about:
+1. ASKING TIME: How long it takes the interviewer to read/ask the question clearly (typically 0.3-0.8 min depending on question length)
+2. THINKING TIME: How long the candidate needs to recall an experience and formulate their response (typically 0.3-0.5 min for direct questions, 0.5-1.0 min for scenario/behavioral questions)
+3. ANSWERING TIME: How long it takes the candidate to deliver a thorough answer:
+   - Simple direct-knowledge questions (e.g., "walk through a Dockerfile"): 2-3 min answer
+   - Behavioral/STAR-format questions requiring a specific story: 3-5 min answer
+   - Complex scenario questions with multiple parts: 4-6 min answer
 
-Be realistic with estimates. Simple direct questions take less time, while complex scenario-based questions requiring detailed explanations take more time.
+CRITICAL RULES:
+- Do NOT underestimate. It is better to slightly overestimate than to run out of time.
+- Multi-part questions (containing "and", "also", "additionally") inherently take longer.
+- Questions asking for SPECIFIC EXAMPLES or STORIES (STAR format) require more time for storytelling.
+- Questions asking candidates to "describe", "walk through", or "tell me about a time" typically need 4-6 minutes total.
+- Simple "how would you" or "what is" questions typically need 2-4 minutes total.
 
 Respond with a JSON object:
 {
   "totalEstimatedMinutes": <number - sum of all estimatedMinutes in breakdown>,
   "breakdown": [
     {
-      "questionId": "<question_id>",
-      "questionText": "<first 60 chars of question>...",
-      "estimatedMinutes": <number - realistic estimate>,
-      "reasoning": "<brief explanation of why this estimate>"
+      "questionId": "<the exact question id>",
+      "questionText": "<first 50 chars of question>...",
+      "estimatedMinutes": <number - realistic total estimate>,
+      "reasoning": "<breakdown: X min asking + Y min thinking + Z min answering = total>"
     }
   ],
   "summary": "<2-3 sentence summary of the time analysis>",
-  "recommendation": "<actionable recommendation based on time budget>",
-  "withinBudget": <boolean - true if total <= configured time>
+  "recommendation": "<actionable recommendation based on the ${configuredScreeningTime}-minute budget>",
+  "withinBudget": <boolean - true if totalEstimatedMinutes <= ${configuredScreeningTime}>
 }
 
 Only output valid JSON. No markdown code blocks.`;
@@ -2071,7 +2079,58 @@ Only output valid JSON. No markdown code blocks.`;
       throw new Error("API key not set");
     }
 
-    const { text } = await generateTextWithRetries(prompt);
+    let text: string;
+    try {
+      geminiLog.info("Using Gemini 2.5 Pro with thinking mode (REST API) for time analysis");
+      const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+      const restBody = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          thinkingConfig: {
+            thinkingBudget: 8192,
+          },
+        },
+      };
+      const restResponse = await fetch(restUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(restBody),
+      });
+      
+      if (!restResponse.ok) {
+        const errBody = await restResponse.text();
+        throw new Error(`REST API error ${restResponse.status}: ${errBody.substring(0, 200)}`);
+      }
+      
+      const restData = await restResponse.json();
+      const candidate = restData?.candidates?.[0];
+      if (!candidate?.content?.parts?.length) {
+        throw new Error("Empty response from Gemini REST API");
+      }
+      
+      const parts = candidate.content.parts;
+      const hasThinking = parts.some((p: any) => p.thought === true);
+      geminiLog.info(`Gemini response: ${parts.length} parts, thinking=${hasThinking}`);
+      
+      const nonThoughtParts = parts.filter((p: any) => p.text && p.thought !== true);
+      text = nonThoughtParts.map((p: any) => p.text).join("");
+      
+      if (!text) {
+        const allTextParts = parts.filter((p: any) => typeof p.text === "string" && p.text.trim());
+        text = allTextParts.length > 0 ? allTextParts[allTextParts.length - 1].text : "";
+      }
+      
+      if (!text || !text.includes("{")) {
+        throw new Error(`No valid JSON content in response (got ${text?.length || 0} chars)`);
+      }
+      
+      geminiLog.info(`Gemini 2.5 Pro thinking mode response received (${text.length} chars)`);
+    } catch (proError: unknown) {
+      const proMsg = proError instanceof Error ? proError.message : String(proError);
+      geminiLog.warn(`Gemini 2.5 Pro thinking mode failed (${proMsg}), falling back to standard generation`);
+      const fallbackResult = await generateTextWithRetries(prompt);
+      text = fallbackResult.text;
+    }
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {

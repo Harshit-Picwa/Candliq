@@ -41,6 +41,7 @@ prisma/           - Prisma schema and migrations
 - **Database Migrations**: `npx prisma migrate deploy`
 
 ## Recent Changes
+- 2026-02-06: AI Time Analysis now uses Gemini 2.5 Pro with thinking mode for independent, accurate time estimates. No longer uses stored estimates from question generation. After analysis, updates stored estimates so frontend stays in sync. Enhanced prompt gives detailed breakdown (asking + thinking + answering time per question).
 - 2026-02-06: AI prompt optimized to generate shorter, more focused questions (3-4 min each instead of 6-7) to maximize question count within screening time budget. All three prompt builders (main, first-batch, subsequent-batch) updated consistently.
 - 2026-02-06: Frontend time display fix - replaced hardcoded complexity-based TIME_ESTIMATES (simple=2.0/moderate=2.5/complex=3.0) with actual AI-generated estimatedMinutes per question. All displays (badges, totals, AI analysis modal, breakdowns) now show real AI estimates. Frontend and backend time calculations are now consistent.
 - 2026-02-06: Backend precision improvements - smart time budget enforcement preserving competency coverage, auto-complexity assignment, time clamping (0.5-6.0 min), gap-filling to maximize screening time utilization, totalMinutes passed to generation for adaptive buffer sizing, demoted overflow questions become buffers instead of being discarded
