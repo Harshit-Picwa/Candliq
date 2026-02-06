@@ -179,41 +179,44 @@ export default function QuestionsSetupPage() {
   const estimatedMinutes = realTimeEstimate.total;
   const configuredScreeningTime = (project as any)?.interviewDuration || 0;
   
+  const [aiAnalysisComplete, setAiAnalysisComplete] = useState(false);
+  const [aiAnalysisFailed, setAiAnalysisFailed] = useState(false);
+  const autoAnalysisTriggered = useRef(false);
+  
   // Mutation to fetch AI time analysis
   const analyzeTime = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/projects/${id}/analyze-time`);
+      const res = await apiRequest("POST", `/api/projects/${id}/analyze-time`, { analyzeAll: true });
       return await res.json();
     },
     onSuccess: (data) => {
       setTimeAnalysis(data as any);
-      if (data.breakdown && Array.isArray(data.breakdown)) {
+      if (data.updatedQuestions && Array.isArray(data.updatedQuestions)) {
+        setQuestions(data.updatedQuestions);
+      } else if (data.breakdown && Array.isArray(data.breakdown)) {
         setQuestions(prev => prev.map(q => {
           const analyzed = data.breakdown.find((b: any) => b.questionId === q.id);
           if (analyzed && typeof analyzed.estimatedMinutes === "number") {
-            return { ...q, estimatedMinutes: analyzed.estimatedMinutes };
+            const isIncluded = data.includedQuestionIds 
+              ? data.includedQuestionIds.includes(q.id) 
+              : q.isMandatory;
+            return { ...q, estimatedMinutes: analyzed.estimatedMinutes, isMandatory: isIncluded };
           }
           return q;
         }));
       }
+      setAiAnalysisComplete(true);
+      setAiAnalysisFailed(false);
       queryClient.invalidateQueries({ queryKey: ['/api/projects', id] });
     },
     onError: (error) => {
       console.error("[analyzeTime] Error:", error);
-      // Fallback to real-time calculation based on pre-assigned complexity
-      const estimate = calculateRealTimeEstimate();
-      setTimeAnalysis({
-        totalEstimatedMinutes: estimate.total,
-        breakdown: questions.filter(q => q.isMandatory).map(q => ({
-          questionId: q.id,
-          questionText: q.question.substring(0, 60) + "...",
-          estimatedMinutes: getQuestionMinutes(q),
-          complexity: (q as any).complexity || "moderate",
-          reasoning: "Based on AI-estimated time",
-        })),
-        summary: `The screening consists of ${estimate.counts.simple} simple, ${estimate.counts.moderate} moderate, and ${estimate.counts.complex} complex questions, totaling ${estimate.total} minutes of pure Q&A time.`,
-        recommendation: "Using pre-assigned complexity from question generation.",
-        withinBudget: estimate.total <= configuredScreeningTime,
+      setAiAnalysisFailed(true);
+      setAiAnalysisComplete(false);
+      toast({
+        title: "Analysis failed",
+        description: "AI time analysis could not be completed. You can retry or continue manually.",
+        variant: "destructive",
       });
     },
   });
@@ -224,13 +227,19 @@ export default function QuestionsSetupPage() {
       const loadedCompetencies = project.competencyRubricJson || [];
       setQuestions(loadedQuestions);
       setCompetencies(loadedCompetencies);
-      // Select first question by default so rubric shows immediately
       const firstQuestion = loadedQuestions[0];
       setSelectedQuestionId(firstQuestion?.id || null);
       setEditedQuestionIds(new Set());
       setApproved(project.status === "questions_approved");
       
-      // On initial load, restore the saved step or default based on status
+      const hasEstimates = loadedQuestions.some((q: any) => typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0);
+      const hasIncluded = loadedQuestions.some((q: any) => q.isMandatory);
+      if (hasEstimates) {
+        setAiAnalysisComplete(true);
+      } else if (loadedQuestions.length > 0 && !hasEstimates) {
+        setAiAnalysisComplete(false);
+      }
+      
       if (!initialStepSet.current) {
         console.log("[useEffect] Loading project - status:", project.status, "questionsStep:", project.questionsStep);
         if (project.questionsStep === "edit" || project.questionsStep === "review") {
@@ -244,6 +253,18 @@ export default function QuestionsSetupPage() {
       }
     }
   }, [project]);
+
+  // Auto-trigger AI analysis when questions exist but have no time estimates
+  useEffect(() => {
+    if (questions.length > 0 && !aiAnalysisComplete && !aiAnalysisFailed && !autoAnalysisTriggered.current && !analyzeTime.isPending) {
+      const hasEstimates = questions.some((q: any) => typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0);
+      if (!hasEstimates) {
+        console.log("[auto-analysis] Questions have no estimates, triggering AI analysis");
+        autoAnalysisTriggered.current = true;
+        analyzeTime.mutate();
+      }
+    }
+  }, [questions, aiAnalysisComplete, aiAnalysisFailed]);
 
   // Persist current stage when visiting this page (even if user doesn't change subtabs)
   useEffect(() => {
@@ -290,6 +311,9 @@ export default function QuestionsSetupPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
+      setAiAnalysisComplete(false);
+      setAiAnalysisFailed(false);
+      autoAnalysisTriggered.current = false;
       toast({ title: "Questions regenerated", description: "New questions have been generated." });
     },
     onError: () => {
@@ -322,6 +346,10 @@ export default function QuestionsSetupPage() {
       setIsRefiningIndividual(false);
       setIsRefiningSelected(false);
       setSelectedForRefine(new Set());
+
+      setAiAnalysisComplete(false);
+      setAiAnalysisFailed(false);
+      autoAnalysisTriggered.current = false;
 
       let title = "Questions refined";
       if (variables.questionId) title = "Question refined";
@@ -784,7 +812,7 @@ export default function QuestionsSetupPage() {
         ) : (step === "review" || isLocked) ? (
           <div className="grid gap-12 pb-20 max-w-4xl mx-auto">
             {[
-              { sectionTitle: "Included in interview", sectionSubtitle: `${includedCount} question(s) • ${estimatedMinutes} min est.${configuredScreeningTime > 0 ? ` / ${configuredScreeningTime} min budget` : ""}`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
+              { sectionTitle: "Included in interview", sectionSubtitle: aiAnalysisComplete ? `${includedCount} question(s) • ${estimatedMinutes} min est.${configuredScreeningTime > 0 ? ` / ${configuredScreeningTime} min budget` : ""}` : `${includedCount} question(s)`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
               { sectionTitle: "Not included", sectionSubtitle: `${notIncludedCount} question(s)`, grouped: groupedNotIncluded, icon: AlertCircle, iconClass: "text-muted-foreground" },
             ].map(({ sectionTitle, sectionSubtitle, grouped, icon: SectionIcon, iconClass }) => {
               return (
@@ -1058,6 +1086,35 @@ export default function QuestionsSetupPage() {
 
                 <ScrollArea className="flex-1 pr-4 -mr-4 scrollbar-visible">
                   <div className="space-y-8 pb-12">
+                    {analyzeTime.isPending && (
+                      <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20 mx-1">
+                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        <div>
+                          <p className="text-sm font-bold text-foreground">AI is analyzing your questions...</p>
+                          <p className="text-xs text-muted-foreground">Estimating time and selecting which questions fit your screening budget</p>
+                        </div>
+                      </div>
+                    )}
+                    {aiAnalysisFailed && !analyzeTime.isPending && (
+                      <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-destructive/5 border border-destructive/20 mx-1">
+                        <div>
+                          <p className="text-sm font-bold text-foreground">Analysis could not be completed</p>
+                          <p className="text-xs text-muted-foreground">AI was unable to analyze question timing. You can retry or continue editing.</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid="button-retry-analysis"
+                          onClick={() => {
+                            setAiAnalysisFailed(false);
+                            autoAnalysisTriggered.current = false;
+                            analyzeTime.mutate();
+                          }}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                     {groupedQuestions
                       .filter(g => g.questions && g.questions.length > 0)
                       .map(({ competency, questions: compQuestions }, activeIdx) => {
@@ -1159,8 +1216,8 @@ export default function QuestionsSetupPage() {
                                               )}
                                               placeholder="Enter question text..."
                                             />
-                                            {/* Complexity badge */}
-                                            {(question as any).complexity && (
+                                            {/* Complexity badge - only shown after AI analysis */}
+                                            {aiAnalysisComplete && (question as any).complexity && (
                                               <div className="flex items-center gap-2 mt-2">
                                                 <span className={cn(
                                                   "px-2 py-0.5 rounded text-[10px] font-bold uppercase",

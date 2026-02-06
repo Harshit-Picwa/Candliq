@@ -182,9 +182,16 @@ export async function registerRoutes(
       );
       console.log("[generate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 
+      const pendingQuestions = questions.map((q: any) => ({
+        ...q,
+        isMandatory: false,
+        estimatedMinutes: undefined,
+      }));
+      console.log("[generate-questions] Set all questions to pending (isMandatory=false, no estimates)");
+
       const updated = await storage.updateProject(project.id, {
         competencyRubricJson: competencies,
-        screeningQuestionsJson: questions,
+        screeningQuestionsJson: pendingQuestions,
         aiChatHistoryJson: history as any,
       });
 
@@ -222,9 +229,15 @@ export async function registerRoutes(
       );
       console.log("[regenerate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 
+      const pendingQuestions = questions.map((q: any) => ({
+        ...q,
+        isMandatory: false,
+        estimatedMinutes: undefined,
+      }));
+
       const updated = await storage.updateProject(project.id, {
         competencyRubricJson: competencies,
-        screeningQuestionsJson: questions,
+        screeningQuestionsJson: pendingQuestions,
         aiChatHistoryJson: history as any,
       });
 
@@ -340,31 +353,33 @@ export async function registerRoutes(
       const questions = (project.screeningQuestionsJson || []) as ScreeningQuestion[];
       const competencies = (project.competencyRubricJson || []) as Competency[];
       const configuredScreeningTime = project.interviewDuration || 15;
+      const { analyzeAll } = req.body || {};
 
-      console.log(`[analyze-time] Analyzing ${questions.filter(q => q.isMandatory).length} included questions for project ${req.params.id}`);
+      const hasAnyIncluded = questions.some(q => q.isMandatory);
+      const shouldAnalyzeAll = analyzeAll === true || !hasAnyIncluded;
       
-      const analysis = await analyzeQuestionTime(questions, competencies, configuredScreeningTime);
+      console.log(`[analyze-time] Analyzing ${shouldAnalyzeAll ? 'ALL' : questions.filter(q => q.isMandatory).length + ' included'} questions for project ${req.params.id}`);
+      
+      const analysis = await analyzeQuestionTime(questions, competencies, configuredScreeningTime, shouldAnalyzeAll);
       
       const updatedQuestions = questions.map(q => {
         const analyzed = analysis.breakdown.find(b => b.questionId === q.id);
-        if (analyzed && typeof analyzed.estimatedMinutes === "number") {
-          return { ...q, estimatedMinutes: analyzed.estimatedMinutes };
+        const newEstimate = analyzed && typeof analyzed.estimatedMinutes === "number" ? analyzed.estimatedMinutes : (q as any).estimatedMinutes;
+        
+        let newMandatory = q.isMandatory;
+        if (shouldAnalyzeAll && analysis.includedQuestionIds) {
+          newMandatory = analysis.includedQuestionIds.includes(q.id);
         }
-        return q;
+        
+        return { ...q, estimatedMinutes: newEstimate, isMandatory: newMandatory };
       });
       
-      const questionsChanged = updatedQuestions.some((q, i) => 
-        (q as any).estimatedMinutes !== (questions[i] as any).estimatedMinutes
-      );
+      await storage.updateProject(parseInt(req.params.id), {
+        screeningQuestionsJson: updatedQuestions,
+      } as any);
+      console.log(`[analyze-time] Updated stored questions with estimates and inclusion decisions`);
       
-      if (questionsChanged) {
-        await storage.updateProject(parseInt(req.params.id), {
-          screeningQuestionsJson: updatedQuestions,
-        } as any);
-        console.log(`[analyze-time] Updated stored question estimates to match Gemini analysis`);
-      }
-      
-      res.json(analysis);
+      res.json({ ...analysis, updatedQuestions });
     } catch (error: any) {
       console.error("[analyze-time] Error:", error?.message || error);
       res.status(500).json({ error: "Failed to analyze question time", details: error?.message });

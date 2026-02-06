@@ -2000,7 +2000,8 @@ function classifyQuestionComplexity(question: string): "simple" | "moderate" | "
 export async function analyzeQuestionTime(
   questions: ScreeningQuestion[],
   competencies: Competency[],
-  configuredScreeningTime: number
+  configuredScreeningTime: number,
+  analyzeAll: boolean = false
 ): Promise<{
   totalEstimatedMinutes: number;
   breakdown: Array<{
@@ -2012,18 +2013,22 @@ export async function analyzeQuestionTime(
   summary: string;
   recommendation: string;
   withinBudget: boolean;
+  includedQuestionIds?: string[];
 }> {
-  const includedQuestions = questions.filter(q => q.isMandatory);
+  const questionsToAnalyze = analyzeAll ? questions : questions.filter(q => q.isMandatory);
   
-  if (includedQuestions.length === 0) {
+  if (questionsToAnalyze.length === 0) {
     return {
       totalEstimatedMinutes: 0,
       breakdown: [],
       summary: "No Q&A screening questions are currently included in the interview.",
       recommendation: "Add planned Q&A questions to get a time estimate.",
       withinBudget: true,
+      includedQuestionIds: [],
     };
   }
+  
+  const includedQuestions = questionsToAnalyze;
 
   geminiLog.info("Calling Gemini 2.5 Pro (thinking mode) for independent time analysis");
   
@@ -2151,8 +2156,26 @@ Only output valid JSON. No markdown code blocks.`;
     });
 
     const totalEstimatedMinutes = breakdown.reduce((sum: number, b: any) => sum + b.estimatedMinutes, 0);
-    const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     
+    let includedQuestionIds: string[] | undefined;
+    if (analyzeAll && configuredScreeningTime > 0) {
+      includedQuestionIds = selectQuestionsForBudget(breakdown, configuredScreeningTime, includedQuestions, competencies);
+      const includedTotal = breakdown
+        .filter((b: any) => includedQuestionIds!.includes(b.questionId))
+        .reduce((sum: number, b: any) => sum + b.estimatedMinutes, 0);
+      const withinBudget = includedTotal <= configuredScreeningTime;
+      geminiLog.info(`AI analysis (analyzeAll): selected ${includedQuestionIds.length}/${breakdown.length} questions, ${includedTotal.toFixed(1)}/${configuredScreeningTime} min`);
+      return {
+        totalEstimatedMinutes: Math.round(includedTotal * 10) / 10,
+        breakdown,
+        summary: parsed.summary || generateTimeSummary(includedQuestionIds.length, includedTotal),
+        recommendation: parsed.recommendation || generateTimeRecommendation(includedTotal, configuredScreeningTime),
+        withinBudget,
+        includedQuestionIds,
+      };
+    }
+    
+    const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     geminiLog.info(`AI time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min, within budget: ${withinBudget}`);
 
     return {
@@ -2177,8 +2200,25 @@ Only output valid JSON. No markdown code blocks.`;
     });
     
     const totalEstimatedMinutes = breakdown.reduce((sum, b) => sum + b.estimatedMinutes, 0);
-    const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     
+    let includedQuestionIds: string[] | undefined;
+    if (analyzeAll && configuredScreeningTime > 0) {
+      includedQuestionIds = selectQuestionsForBudget(breakdown, configuredScreeningTime, includedQuestions, competencies);
+      const includedTotal = breakdown
+        .filter(b => includedQuestionIds!.includes(b.questionId))
+        .reduce((sum, b) => sum + b.estimatedMinutes, 0);
+      geminiLog.info(`Fallback analysis (analyzeAll): selected ${includedQuestionIds.length}/${breakdown.length}, ${includedTotal.toFixed(1)}/${configuredScreeningTime} min`);
+      return {
+        totalEstimatedMinutes: Math.round(includedTotal * 10) / 10,
+        breakdown,
+        summary: generateTimeSummary(includedQuestionIds.length, includedTotal),
+        recommendation: generateTimeRecommendation(includedTotal, configuredScreeningTime),
+        withinBudget: includedTotal <= configuredScreeningTime,
+        includedQuestionIds,
+      };
+    }
+    
+    const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
     const summary = generateTimeSummary(includedQuestions.length, totalEstimatedMinutes);
     const recommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
     
@@ -2192,4 +2232,46 @@ Only output valid JSON. No markdown code blocks.`;
       withinBudget,
     };
   }
+}
+
+function selectQuestionsForBudget(
+  breakdown: Array<{ questionId: string; estimatedMinutes: number }>,
+  budgetMinutes: number,
+  questions: ScreeningQuestion[],
+  competencies: Competency[]
+): string[] {
+  const selected: string[] = [];
+  let usedTime = 0;
+  
+  const competencyIds = Array.from(new Set(questions.map(q => q.competencyId)));
+  const coveredCompetencies = new Set<string>();
+  
+  for (const compId of competencyIds) {
+    const compQuestions = breakdown.filter(b => {
+      const q = questions.find(q => q.id === b.questionId);
+      return q?.competencyId === compId;
+    }).sort((a, b) => a.estimatedMinutes - b.estimatedMinutes);
+    
+    if (compQuestions.length > 0) {
+      const best = compQuestions[0];
+      if (usedTime + best.estimatedMinutes <= budgetMinutes) {
+        selected.push(best.questionId);
+        usedTime += best.estimatedMinutes;
+        coveredCompetencies.add(compId);
+      }
+    }
+  }
+  
+  const remaining = breakdown
+    .filter(b => !selected.includes(b.questionId))
+    .sort((a, b) => a.estimatedMinutes - b.estimatedMinutes);
+  
+  for (const item of remaining) {
+    if (usedTime + item.estimatedMinutes <= budgetMinutes) {
+      selected.push(item.questionId);
+      usedTime += item.estimatedMinutes;
+    }
+  }
+  
+  return selected;
 }
