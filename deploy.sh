@@ -70,6 +70,18 @@ mkdir -p logs
 echo "🛑 Stopping existing PM2 processes..."
 pm2 delete candiq-ai 2>/dev/null || true
 
+# Update nginx configuration if file exists
+if [ -f nginx.conf.ec2 ]; then
+    echo "🔄 Updating nginx configuration..."
+    sudo cp nginx.conf.ec2 /etc/nginx/sites-available/candiq-ai
+    if sudo nginx -t 2>/dev/null; then
+        sudo systemctl reload nginx
+        echo -e "${GREEN}✓ Nginx configuration updated${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Nginx config test failed, keeping existing config${NC}"
+    fi
+fi
+
 # Start application with PM2
 echo "▶️  Starting application with PM2..."
 pm2 start ecosystem.config.cjs
