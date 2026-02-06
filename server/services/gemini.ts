@@ -903,14 +903,14 @@ You are wanting your hiring manager to ask some skills & experience specific que
 
 According to all of this create questions with expected answers and a screening criteria (Good-fit answer, moderate-fit answer, bad-fit answer) that will be easy for the hiring manager to ask and also conclude if the candidate is a good-fit. Questions can be scenario based or actually asking about a skill directly.
 
-Include some additional questions (2-3 extra) where the Hiring Manager may choose to ask other ones instead, clearly marking them as additional/optional with "isMandatory": false.
+MAXIMIZE MANDATORY QUESTIONS: Your primary goal is to fit as many mandatory questions as possible within the ${screeningTime}-minute screening time. Do NOT generate just 3 long questions when you could fit 5-6 shorter, focused ones. After filling the mandatory budget, include 2-3 additional optional questions (marked "isMandatory": false) that the Hiring Manager may choose to swap in.
 
 The objective from this is so that the hiring manager can save time of the subject matter expert employees by reducing candidates that are clearly not a good-fit and ones that just answer buzzwords and lack needed experience/knowledge.
 
 IMPORTANT GUIDELINES:
-1. The TOTAL time for ALL main (mandatory) questions must fit within ${screeningTime} minutes including asking time, candidate thinking time, and answering time.
+1. The TOTAL time for ALL mandatory questions must fit within ${screeningTime} minutes including asking time, candidate thinking time, and answering time.
 2. For each question, estimate the realistic time in minutes it would take (asking + thinking + answering). Do NOT use fixed/hardcoded values - estimate based on the actual question complexity and scope.
-3. MAXIMIZE QUESTION COUNT: Aim to generate as many mandatory questions as possible that fit within the ${screeningTime}-minute budget. Keep individual questions focused and concise — target 3-4 minutes per question rather than 6-7 minute questions. Ask about ONE specific skill or scenario per question, not multiple topics combined. A ${screeningTime}-minute budget should fit approximately ${Math.floor(screeningTime / 3.5)} mandatory questions.
+3. QUESTION DESIGN: Keep each question focused on ONE specific skill or scenario — target 3-4 minutes per question rather than 6-7 minute questions. This means a ${screeningTime}-minute budget should fit approximately ${Math.floor(screeningTime / 3.5)} mandatory questions. If you can fit more by keeping questions concise, do so.
 4. Extract 3-5 key competencies directly from the JD.
 5. Every question must reference SPECIFIC technologies, tools, or responsibilities from the JD.
 6. Questions must test PRACTICAL EXPERIENCE, not theoretical knowledge.
@@ -1283,9 +1283,9 @@ REQUIREMENTS:
 1. Extract 3-5 key competencies from the JD
 2. Generate exactly ${questionsNeeded} scenario-based questions
 3. For EACH question, estimate realistic time in minutes (asking + thinking + answering). Do NOT use fixed values - estimate based on actual question complexity and scope.
-4. KEEP QUESTIONS FOCUSED AND CONCISE: Target 3-4 minutes per question. Ask about ONE specific skill or scenario per question, not multiple topics combined. This maximizes coverage across competencies.
+4. KEEP QUESTIONS FOCUSED AND CONCISE: Target 3-4 minutes per question. Ask about ONE specific skill or scenario per question, not multiple topics combined. This maximizes coverage across competencies within the ${screeningTime}-minute screening time budget.
 5. Include detailed rubrics with exactly 5 signals each (goodSignals, moderateSignals, poorSignals)
-6. The TOTAL time for all mandatory questions must fit within ${screeningTime} minutes.
+6. Mark questions that fit within the ${screeningTime}-minute time budget as "isMandatory": true. Mark any extras beyond the budget as "isMandatory": false.
 
 Respond with JSON:
 {
@@ -1340,6 +1340,7 @@ REQUIREMENTS:
 3. For EACH question, estimate realistic time in minutes (asking + thinking + answering). Do NOT use fixed values.
 4. KEEP QUESTIONS FOCUSED AND CONCISE: Target 3-4 minutes per question. Ask about ONE specific skill or scenario per question, not multiple topics combined.
 5. Include detailed rubrics with exactly 5 signals each
+6. All questions in this batch should be marked "isMandatory": true.
 
 Respond with JSON (NO competencies array, only questions):
 {
