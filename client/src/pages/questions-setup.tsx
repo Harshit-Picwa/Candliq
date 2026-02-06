@@ -93,16 +93,14 @@ function AutoResizeTextarea({
 
 export default function QuestionsSetupPage() {
   const { id } = useParams<{ id: string }>();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { toast } = useToast();
   
-  // Check if we're in preview/review mode
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
-  
-  useEffect(() => {
+  // Check if we're in preview/review mode - re-check when URL changes
+  const isPreviewMode = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    setIsPreviewMode(params.get("preview") === "true");
-  }, []);
+    return params.get("preview") === "true";
+  }, [location]);
 
   const { data: project, isLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -890,11 +888,11 @@ export default function QuestionsSetupPage() {
                                     </div>
                                   </div>
                                   <div
-                                    role={isLocked ? undefined : "button"}
-                                    tabIndex={isLocked ? undefined : 0}
-                                    onClick={isLocked ? undefined : () => toggleMandatory(q.id)}
-                                    onKeyDown={isLocked ? undefined : (e) => e.key === "Enter" && toggleMandatory(q.id)}
-                                    className={cn("px-8 py-5 bg-muted/40 border-t border-border/40 flex items-center justify-between", !isLocked && "group/toggle cursor-pointer")}
+                                    role={(isLocked || isPreviewMode) ? undefined : "button"}
+                                    tabIndex={(isLocked || isPreviewMode) ? undefined : 0}
+                                    onClick={(isLocked || isPreviewMode) ? undefined : () => toggleMandatory(q.id)}
+                                    onKeyDown={(isLocked || isPreviewMode) ? undefined : (e) => e.key === "Enter" && toggleMandatory(q.id)}
+                                    className={cn("px-8 py-5 bg-muted/40 border-t border-border/40 flex items-center justify-between", !(isLocked || isPreviewMode) && "group/toggle cursor-pointer")}
                                   >
                                     <div className="flex items-center gap-3">
                                       <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center transition-all", q.isMandatory ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
@@ -934,7 +932,7 @@ export default function QuestionsSetupPage() {
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-4">
                       <h2 className="text-xl font-extrabold tracking-tight">Screening Criteria</h2>
-                      {selectedForRefine.size > 0 && (
+                      {!isPreviewMode && selectedForRefine.size > 0 && (
                         <Badge variant="secondary" className="rounded-full px-3 py-0.5 bg-primary/10 text-primary border-primary/20 animate-in zoom-in duration-300">
                           {selectedForRefine.size} Selected
                         </Badge>
@@ -945,14 +943,12 @@ export default function QuestionsSetupPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {selectedForRefine.size > 0 ? (
+                    {!isPreviewMode && (selectedForRefine.size > 0 ? (
                       <Button
                         variant="default"
                         size="sm"
                         className="gap-2 rounded-xl shadow-lg shadow-primary/20 bg-primary font-bold animate-in slide-in-from-right-4"
-                        disabled={isPreviewMode}
                         onClick={() => {
-                          if (isPreviewMode) return;
                           setIsRefiningSelected(true);
                           setIsRefiningIndividual(false);
                           setShowRefineDialog(true);
@@ -974,9 +970,8 @@ export default function QuestionsSetupPage() {
                             variant="secondary"
                             size="sm"
                             className="gap-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 border border-primary/10 shadow-sm"
-                            disabled={!project?.jdText || refineQuestions.isPending || isPreviewMode}
+                            disabled={!project?.jdText || refineQuestions.isPending}
                             onClick={() => {
-                              if (isPreviewMode) return;
                               setIsRefiningIndividual(false);
                               setIsRefiningSelected(false);
                             }}
@@ -1044,7 +1039,7 @@ export default function QuestionsSetupPage() {
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
-                    )}
+                    ))}
                   </div>
                 </div>
 
@@ -1165,51 +1160,49 @@ export default function QuestionsSetupPage() {
                                               </div>
                                             )}
                                           </div>
-                                          <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <TooltipProvider>
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-9 w-9 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 border border-transparent hover:border-primary/20"
-                                                    disabled={isPreviewMode}
-                                                    onClick={(e: React.MouseEvent) => {
-                                                      e.stopPropagation();
-                                                      if (isPreviewMode) return;
-                                                      setSelectedQuestionId(question.id);
-                                                      setIsRefiningIndividual(true);
-                                                      setShowRefineDialog(true);
-                                                    }}
-                                                  >
-                                                    <Sparkles className="w-4 h-4" />
-                                                  </Button>
-                                                </TooltipTrigger>
-                                                <TooltipContent>{isPreviewMode ? "Disabled in preview mode" : "AI Refine"}</TooltipContent>
-                                              </Tooltip>
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
-                                                    disabled={isPreviewMode}
-                                                    onClick={(e: React.MouseEvent) => {
-                                                      e.stopPropagation();
-                                                      if (isPreviewMode) return;
-                                                      setDeleteQuestionConfirm({
-                                                        id: question.id,
-                                                        preview: (question.question || "").trim().slice(0, 120),
-                                                      });
-                                                    }}
-                                                  >
-                                                    <Trash2 className="w-4 h-4" />
-                                                  </Button>
-                                                </TooltipTrigger>
-                                                <TooltipContent>{isPreviewMode ? "Disabled in preview mode" : "Delete"}</TooltipContent>
-                                              </Tooltip>
-                                            </TooltipProvider>
-                                          </div>
+                                          {!isPreviewMode && (
+                                            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <TooltipProvider>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 border border-transparent hover:border-primary/20"
+                                                      onClick={(e: React.MouseEvent) => {
+                                                        e.stopPropagation();
+                                                        setSelectedQuestionId(question.id);
+                                                        setIsRefiningIndividual(true);
+                                                        setShowRefineDialog(true);
+                                                      }}
+                                                    >
+                                                      <Sparkles className="w-4 h-4" />
+                                                    </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>AI Refine</TooltipContent>
+                                                </Tooltip>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20"
+                                                      onClick={(e: React.MouseEvent) => {
+                                                        e.stopPropagation();
+                                                        setDeleteQuestionConfirm({
+                                                          id: question.id,
+                                                          preview: (question.question || "").trim().slice(0, 120),
+                                                        });
+                                                      }}
+                                                    >
+                                                      <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>Delete</TooltipContent>
+                                                </Tooltip>
+                                              </TooltipProvider>
+                                            </div>
+                                          )}
                                         </div>
 
                                         <div className="flex items-center justify-between border-t border-border/40 pt-4">
@@ -1403,15 +1396,13 @@ export default function QuestionsSetupPage() {
                   )}
                 </ScrollArea>
 
-                {selectedQuestion && (
+                {selectedQuestion && !isPreviewMode && (
                   <div className="p-4 bg-muted/30 border-t border-border/40">
                     <Button
                       variant="outline"
                       size="sm"
                       className="w-full rounded-xl gap-2 font-bold text-xs h-9 bg-background border-border/60 shadow-sm"
-                      disabled={isPreviewMode}
                       onClick={() => {
-                        if (isPreviewMode) return;
                         setIsRefiningIndividual(true);
                         setShowRefineDialog(true);
                       }}

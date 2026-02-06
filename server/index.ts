@@ -8,6 +8,10 @@ import { createServer } from "http";
 const app = express();
 const httpServer = createServer(app);
 
+// Set longer timeout for AI operations (5 minutes)
+httpServer.timeout = 300000; // 5 minutes in milliseconds
+httpServer.keepAliveTimeout = 300000;
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;

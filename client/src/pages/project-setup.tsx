@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { format } from "date-fns";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
@@ -39,16 +39,14 @@ const MIN_SME_LENGTH = 50;
 
 export default function ProjectSetupPage() {
   const { id } = useParams<{ id: string }>();
-  const [, navigate] = useLocation();
+  const [currentPath, navigate] = useLocation();
   const { toast } = useToast();
   
-  // Check if we're in preview/review mode
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
-  
-  useEffect(() => {
+  // Check if we're in preview/review mode - re-check when URL changes
+  const isPreviewMode = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    setIsPreviewMode(params.get("preview") === "true");
-  }, []);
+    return params.get("preview") === "true";
+  }, [currentPath]);
 
   const { data: project, isLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -465,7 +463,7 @@ export default function ProjectSetupPage() {
       currentStage={1}
       stageDescription={isPreviewMode ? "Preview Mode - Review project details" : "Stage 1: Enter JD and SME notes, then generate questions"}
       onStageClick={(stage) => {
-        if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions`);
+        if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions${isPreviewMode ? '?preview=true' : ''}`);
       }}
       clickableStages={hasExistingQuestions ? [2] : []}
       actions={
@@ -900,7 +898,7 @@ export default function ProjectSetupPage() {
                 </Button>
               ) : hasExistingQuestions && !hasEdits ? (
                 <Button
-                  onClick={() => navigate(`/projects/${id}/questions`)}
+                  onClick={() => navigate(`/projects/${id}/questions${isPreviewMode ? '?preview=true' : ''}`)}
                   className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
                   data-testid="button-next-step"
                 >
