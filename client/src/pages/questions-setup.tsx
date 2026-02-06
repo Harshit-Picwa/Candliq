@@ -311,8 +311,8 @@ export default function QuestionsSetupPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
-      setAiAnalysisComplete(false);
       setAiAnalysisFailed(false);
+      setAiAnalysisComplete(false);
       autoAnalysisTriggered.current = false;
       toast({ title: "Questions regenerated", description: "New questions have been generated." });
     },
@@ -347,8 +347,8 @@ export default function QuestionsSetupPage() {
       setIsRefiningSelected(false);
       setSelectedForRefine(new Set());
 
-      setAiAnalysisComplete(false);
       setAiAnalysisFailed(false);
+      setAiAnalysisComplete(false);
       autoAnalysisTriggered.current = false;
 
       let title = "Questions refined";
