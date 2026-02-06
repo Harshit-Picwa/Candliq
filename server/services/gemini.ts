@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { Competency, ScreeningQuestion, InterviewReport, TranscriptEntry, AISuggestion, InterviewNotes, AnswerEvaluation, AIChatMessage } from "@shared/schema";
+import { getTargetQuestionCountForScreening, getBandForScreening, getExcludedCountForScreening } from "@shared/schema";
 
 // =====================================================================
 // CONFIGURATION & CONSTANTS
@@ -13,14 +14,22 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey);
 
 /**
- * Time estimates per question complexity (in minutes)
- * These are used consistently across generation and analysis
+ * Time estimates per question complexity (in minutes).
+ * Used only for backward compatibility (e.g. analyzeQuestionTime). Prefer model-provided estimatedMinutes.
  */
 const TIME_ESTIMATES = {
-  simple: 2.0,    // Quick technical checks, debugging steps
-  moderate: 2.5,  // Scenario-based, trade-off decisions
-  complex: 3.0,   // Deep architecture, optimization, system design
+  simple: 2.0,
+  moderate: 2.5,
+  complex: 3.0,
 } as const;
+
+/** Single default when model does not provide estimatedMinutes (no hardcoded per-complexity in flow). */
+const DEFAULT_ESTIMATED_MINUTES = 2.5;
+
+/** Minutes reserved for introductions, transitions, and candidate questions; Q&A content must fit within screening minus this. */
+const SCREENING_BUFFER_MINUTES = 5;
+
+/** Excluded count is per-band (see getExcludedCountForScreening); no single constant. */
 
 /**
  * Word count thresholds for complexity classification
@@ -353,18 +362,25 @@ function isRetryableGeminiError(error: any) {
 }
 
 function getGeminiModelCandidates() {
+  // Question generation expects Gemini 3 preview; set GEMINI_MODEL=gemini-3-flash-preview in .env
   const preferred = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
-  // Using Gemini 2.0 thinking models (Note: Gemini 3 doesn't exist yet, using latest thinking models)
   const fallbacks = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-exp-1206"];
   return [preferred, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
 }
 
-async function generateTextWithRetries(prompt: string) {
+/** Model candidates for time analysis: prefer Gemini 3 Pro (thinking/reasoning). */
+function getTimeAnalysisModelCandidates() {
+  const preferred = process.env.GEMINI_TIME_ANALYSIS_MODEL || "gemini-3-pro-preview";
+  const fallbacks = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-3-flash-preview"];
+  return [preferred, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
+}
+
+async function generateTextWithRetries(prompt: string, options?: { modelCandidates?: string[] }) {
   if (!apiKey) {
     throw new Error("GOOGLE_AI_API_KEY is not set. Please configure your API key in the environment variables.");
   }
 
-  const models = getGeminiModelCandidates();
+  const models = options?.modelCandidates ?? getGeminiModelCandidates();
   let lastError: any = null;
 
   for (const modelName of models) {
@@ -455,7 +471,7 @@ function normalizeQuestions(
     if (!["simple", "moderate", "complex"].includes(complexity)) {
       complexity = "moderate";
     }
-    const estimatedMinutes = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES];
+    const estimatedMinutes = typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0 ? q.estimatedMinutes : DEFAULT_ESTIMATED_MINUTES;
 
     return {
       ...q,
@@ -479,48 +495,25 @@ function normalizeQuestions(
 }
 
 /**
- * Calculate the maximum number of questions that can fit in the given time budget.
- * 
- * CRITICAL: interviewDuration is EXCLUSIVELY for planned Q&A screening questions
- * NOT included: introduction, follow-up questions, closing remarks
- * 
- * Uses weighted average based on recommended complexity mix
- * Returns both main questions and recommended buffer count
+ * Target total question count (mandatory + buffer) from screening time bands.
+ * Uses explicit bands: <20 → 6, 20–25 → 8, 25–30 → 10, 30–35 → 11, etc.
  */
 function calculateMaxQuestions(interviewDuration?: number): number {
-  if (typeof interviewDuration !== "number" || Number.isNaN(interviewDuration) || interviewDuration <= 0) {
-    return 6; // Default to 6 questions for 15 minute Q&A screening time
-  }
-
-  // Recommended mix: 40% simple (2.0), 40% moderate (2.5), 20% complex (3.0)
-  const avgMinutesPerQuestion = (0.4 * TIME_ESTIMATES.simple) + (0.4 * TIME_ESTIMATES.moderate) + (0.2 * TIME_ESTIMATES.complex);
-  // This gives us: (0.4 * 2.0) + (0.4 * 2.5) + (0.2 * 3.0) = 0.8 + 1.0 + 0.6 = 2.4 minutes average
-  
-  const maxQuestions = Math.max(1, Math.floor(interviewDuration / avgMinutesPerQuestion));
-  
-  geminiLog.info(`Time budget (Q&A only, excludes intro/follow-ups/outro): ${interviewDuration} mins / ${avgMinutesPerQuestion.toFixed(1)} mins avg per Q = ${maxQuestions} main questions`);
-  
-  return maxQuestions;
+  const screening = typeof interviewDuration === "number" && !Number.isNaN(interviewDuration) && interviewDuration > 0
+    ? interviewDuration
+    : 15;
+  const count = getTargetQuestionCountForScreening(screening);
+  geminiLog.info(`Screening ${screening} min → target ${count} questions total (from bands)`);
+  return count;
 }
 
 /**
- * Calculate number of buffer questions to generate (2-3 extra questions)
- * These are optional questions that can replace excluded main questions
+ * No hardcoded buffer count; prompt asks for "some additional optional questions" only.
  */
-function calculateBufferQuestions(mainQuestions: number): number {
-  // Always generate 2-3 buffer questions for flexibility
-  return mainQuestions <= 5 ? 2 : 3;
+function calculateBufferQuestions(_mainQuestions: number): number {
+  return 0;
 }
 
-/**
- * AUTO-CORRECT complexity classification based on objective metrics.
- * The AI often misclassifies complex questions as simple - this function fixes that.
- * 
- * Rules:
- * - SIMPLE: ≤25 words, no "AND/OR/versus" connecting topics, 1 concept
- * - MODERATE: ≤40 words, may have 1 "AND/OR/versus", 2 concepts
- * - COMPLEX: >40 words OR multiple "AND/OR/versus" OR 3+ concepts
- */
 function autoCorrectComplexity(question: { question?: string; complexity?: string }): { 
   complexity: "simple" | "moderate" | "complex"; 
   estimatedMinutes: number; 
@@ -577,7 +570,7 @@ function autoCorrectComplexity(question: { question?: string; complexity?: strin
   
   return {
     complexity: newComplexity,
-    estimatedMinutes: TIME_ESTIMATES[newComplexity],
+    estimatedMinutes: DEFAULT_ESTIMATED_MINUTES,
     corrected
   };
 }
@@ -740,38 +733,176 @@ function validateComplexityDistribution(
   return adjusted;
 }
 
+/** Use model-provided estimatedMinutes when present; otherwise default. */
+function getQuestionMinutes(q: ScreeningQuestion): number {
+  return typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0 ? q.estimatedMinutes : DEFAULT_ESTIMATED_MINUTES;
+}
+
+/**
+ * Ask Gemini to perform a proper time analysis of each question and decide which ones
+ * to INCLUDE so the total estimated time matches (fits within) the screening time.
+ *
+ * Gemini estimates per-question time (interviewer ask + candidate think/respond) and
+ * selects the best subset whose total ≤ contentBudget.
+ *
+ * Returns { includedIds, breakdown } or null on failure (caller falls back to local trim).
+ */
+async function analyzeAndSelectIncludedQuestions(
+  questions: ScreeningQuestion[],
+  screeningTime: number,
+  contentBudget: number
+): Promise<{
+  includedIds: string[];
+  breakdown: Array<{ questionId: string; estimatedMinutes: number; included: boolean; reasoning: string }>;
+  totalIncludedMinutes: number;
+} | null> {
+  if (questions.length === 0 || !apiKey) return null;
+
+  const questionsText = questions.map((q, i) =>
+    `${i + 1}. [id: ${q.id}] ${q.question}`
+  ).join("\n");
+
+  const prompt = `You are an expert interview consultant analyzing screening questions for a technical interview.
+
+TASK: Estimate the time needed for each question and provide an analysis.
+
+QUESTIONS TO ANALYZE:
+${questionsText}
+
+CONFIGURED SCREENING TIME: ${contentBudget} minutes
+
+For each question, estimate in minutes:
+- How long it will take for the interviewer to ask the question
+- How long it will take for the candidate to think and respond
+
+Based on your time estimates, decide which questions to INCLUDE so that the total estimatedMinutes of included questions fits within ${contentBudget} minutes. Mark each question as "included": true or false. Maximize included questions while staying within budget.
+
+Respond with a JSON object:
+{
+  "totalEstimatedMinutes": <number - sum of estimatedMinutes for INCLUDED questions only>,
+  "breakdown": [
+    {
+      "questionId": "<question_id>",
+      "questionText": "<first 50 chars of question>...",
+      "estimatedMinutes": <number>,
+      "included": true | false,
+      "reasoning": "<brief explanation>"
+    }
+  ],
+  "summary": "<2-3 sentence summary of the time analysis>",
+  "recommendation": "<actionable recommendation based on time budget>",
+  "withinBudget": <boolean - true if total <= configured time>
+}
+
+Only output valid JSON. No markdown code blocks.`;
+
+  try {
+    const { text } = await generateTextWithRetries(prompt);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      geminiLog.warn("analyzeAndSelectIncludedQuestions: no JSON in response");
+      return null;
+    }
+
+    const parsed = safeJsonParse<any>(jsonMatch[0], "time-based inclusion analysis");
+    const breakdown: Array<{ questionId: string; estimatedMinutes: number; included: boolean; reasoning: string }> = [];
+    const validIds = new Set(questions.map((q) => q.id));
+
+    for (const item of (parsed.breakdown || [])) {
+      if (!item.questionId || !validIds.has(item.questionId)) continue;
+      const mins = Number(item.estimatedMinutes);
+      breakdown.push({
+        questionId: item.questionId,
+        estimatedMinutes: Number.isFinite(mins) && mins > 0 ? mins : DEFAULT_ESTIMATED_MINUTES,
+        included: !!item.included,
+        reasoning: item.reasoning || "",
+      });
+    }
+
+    // Validate: re-check total included ≤ contentBudget; if Gemini over-included, trim from the end
+    let totalIncluded = 0;
+    const includedIds: string[] = [];
+    for (const b of breakdown) {
+      if (b.included) {
+        if (totalIncluded + b.estimatedMinutes <= contentBudget) {
+          includedIds.push(b.questionId);
+          totalIncluded += b.estimatedMinutes;
+        } else {
+          b.included = false; // exceeded budget, force exclude
+          geminiLog.warn(`Excluding "${b.questionId}" (${b.estimatedMinutes} min) — would exceed content budget ${contentBudget} min`);
+        }
+      }
+    }
+
+    // Also update estimatedMinutes on original questions from Gemini's analysis
+    const minutesMap = new Map(breakdown.map((b) => [b.questionId, b.estimatedMinutes]));
+    for (const q of questions) {
+      const geminiMinutes = minutesMap.get(q.id);
+      if (geminiMinutes != null) {
+        (q as any).estimatedMinutes = geminiMinutes;
+      }
+    }
+
+    geminiLog.info(`Gemini time analysis: ${includedIds.length} included (${totalIncluded.toFixed(1)} min ≤ ${contentBudget} min), ${questions.length - includedIds.length} excluded`);
+    if (parsed.summary) geminiLog.info(`Gemini summary: ${parsed.summary}`);
+    if (parsed.recommendation) geminiLog.info(`Gemini recommendation: ${parsed.recommendation}`);
+
+    return { includedIds, breakdown, totalIncludedMinutes: totalIncluded };
+  } catch (e) {
+    geminiLog.warn("analyzeAndSelectIncludedQuestions failed, falling back to local trim", e);
+    return null;
+  }
+}
+
 function enforceTimeBudget(
   questions: ScreeningQuestion[],
-  interviewDuration?: number
-) {
-  const maxQuestions = calculateMaxQuestions(interviewDuration);
-  const bufferCount = calculateBufferQuestions(maxQuestions);
+  interviewDuration?: number,
+  options?: { useGeminiInclusion?: boolean }
+): ScreeningQuestion[] {
   const screeningTime = interviewDuration || 15;
-  
-  // Separate mandatory and buffer questions
+  const contentBudget = Math.max(5, screeningTime - SCREENING_BUFFER_MINUTES);
   const mandatory = questions.filter(q => q.isMandatory !== false);
   const buffer = questions.filter(q => q.isMandatory === false);
-  
-  // Validate and adjust mandatory questions based on complexity distribution
-  let trimmedMandatory = validateComplexityDistribution(mandatory, maxQuestions, screeningTime);
-  
-  // Trim buffer questions if too many
-  let trimmedBuffer = buffer;
-  if (buffer.length > bufferCount) {
-    trimmedBuffer = buffer.slice(0, bufferCount);
-    console.warn(
-      `[gemini] Buffer trimmed: ${buffer.length - bufferCount} excess buffer questions removed`
-    );
+
+  let sum = mandatory.reduce((s, q) => s + getQuestionMinutes(q), 0);
+  let trimmedMandatory = [...mandatory];
+  while (sum > contentBudget && trimmedMandatory.length > 1) {
+    const last = trimmedMandatory.pop()!;
+    sum -= getQuestionMinutes(last);
   }
-  
-  // Combine and reorder
-  const combined = [...trimmedMandatory, ...trimmedBuffer].map((q, idx) => ({
-    ...q,
-    order: idx + 1,
-  }));
-  
-  geminiLog.info(`Final after time budget: ${trimmedMandatory.length} main + ${trimmedBuffer.length} buffer = ${combined.length} total`);
-  
+  if (trimmedMandatory.length < mandatory.length) {
+    geminiLog.info(`Trimmed ${mandatory.length - trimmedMandatory.length} question(s) to fit content budget ${contentBudget} min (screening ${screeningTime} min, sum ${sum.toFixed(1)} min)`);
+  }
+
+  const excludedCount = getExcludedCountForScreening(screeningTime);
+  const useGeminiInclusion = options?.useGeminiInclusion === true;
+
+  let combined: ScreeningQuestion[];
+  if (useGeminiInclusion) {
+    // Respect Gemini inclusion: included = trimmed mandatory, excluded = rest (no forced excludedCount).
+    const trimmedIds = new Set(trimmedMandatory.map((q) => q.id));
+    const rest = questions.filter((q) => !trimmedIds.has(q.id));
+    combined = [...trimmedMandatory, ...rest].map((q, idx) => ({
+      ...q,
+      order: idx + 1,
+      isMandatory: idx < trimmedMandatory.length,
+    }));
+  } else {
+    combined = [...trimmedMandatory, ...buffer].map((q, idx) => ({ ...q, order: idx + 1 }));
+    if (combined.length >= excludedCount) {
+      combined = combined
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((q, idx) => ({
+          ...q,
+          order: idx + 1,
+          isMandatory: idx < combined.length - excludedCount,
+        }));
+    }
+  }
+
+  const mainCount = combined.filter((q) => q.isMandatory !== false).length;
+  const excludedCountActual = combined.length - mainCount;
+  geminiLog.info(`Final after time budget: ${mainCount} main + ${excludedCountActual} excluded = ${combined.length} total`);
   return combined;
 }
 
@@ -790,30 +921,27 @@ export async function extractCompetenciesAndQuestions(
   location?: string,
   interviewDuration?: number,
   existingQuestions?: ScreeningQuestion[],
-  chatHistory: AIChatMessage[] = []
+  chatHistory: AIChatMessage[] = [],
+  totalInterviewMinutes?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
-  geminiLog.info(`extractCompetenciesAndQuestions called with Q&A duration (excludes intro/follow-ups): ${interviewDuration} min`);
+  geminiLog.info(`extractCompetenciesAndQuestions called with Q&A duration (excludes intro/follow-ups): ${interviewDuration} min, total interview: ${totalInterviewMinutes ?? "not set"} min`);
 
-  const maxQuestions = calculateMaxQuestions(interviewDuration);
-  const bufferQuestions = calculateBufferQuestions(maxQuestions);
-  const totalQuestions = maxQuestions + bufferQuestions;
   const screeningTime = interviewDuration || 15;
+  const band = getBandForScreening(screeningTime);
+  const totalQuestions = band.questionCount;
+  const maxQuestions = band.includedCount;
+  const bufferQuestions = band.excludedCount;
   
   // Check if we need batched generation to avoid token limits
   if (totalQuestions > MAX_QUESTIONS_PER_BATCH) {
     geminiLog.info(`Large question count (${totalQuestions}), using batched generation to avoid token limits`);
     return extractCompetenciesAndQuestionsBatched(
       jdText, smeNotes, customInstructions, companyWebsite, location, 
-      interviewDuration, existingQuestions, chatHistory
+      interviewDuration, existingQuestions, chatHistory, totalInterviewMinutes
     );
   }
   
-  // Get adaptive complexity distribution based on interview duration
-  const dist = getAdaptiveComplexityDistribution(screeningTime, maxQuestions);
-  const expectedTotalTime = calculateTotalMinutes({ simple: dist.simple, moderate: dist.moderate, complex: dist.complex });
-  
-  geminiLog.info(`Will generate: ${maxQuestions} main Q&A questions + ${bufferQuestions} buffer = ${totalQuestions} total (for ${screeningTime} min Q&A time, excludes intro/follow-ups)`);
-  geminiLog.info(`Adaptive distribution: ${dist.simple} simple, ${dist.moderate} moderate, ${dist.complex} complex (expected ${expectedTotalTime.toFixed(1)} min)`);
+  geminiLog.info(`Will generate up to ${totalQuestions} questions (${maxQuestions} included + ${bufferQuestions} excluded) for ${screeningTime} min screening time; total interview ${totalInterviewMinutes ?? "not set"} min`);
 
   const existingQuestionTexts = (existingQuestions || [])
     .map((q) => q?.question)
@@ -824,255 +952,42 @@ export async function extractCompetenciesAndQuestions(
     ? `\n\nEXISTING QUESTIONS (DO NOT DUPLICATE THESE):\n${existingQuestions.map((q, i) => `${i + 1}. ${q.question}`).join('\n')}\n`
     : '';
 
-  const prompt = `You are a subject matter expert in the role that is being hired. 
+  const totalTimeLine = totalInterviewMinutes != null && totalInterviewMinutes > 0
+    ? `\nTotal interview time for this slot is ${totalInterviewMinutes} minutes. Do not exceed the screening time and keep the overall flow within total interview time.\n`
+    : '';
+  const contentBudget = Math.max(5, screeningTime - SCREENING_BUFFER_MINUTES);
 
-═══════════════════════════════════════════════════════════════
-📋 STEP 1: READ AND ANALYZE THE JD THOROUGHLY
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL**: Before generating questions, CAREFULLY READ the entire Job Description and SME notes below. Identify:
-- SPECIFIC technologies, tools, frameworks, and languages mentioned (e.g., "FastAPI", "PostgreSQL", "Docker", "AWS")
-- EXACT responsibilities and requirements listed
-- Domain-specific terminology and concepts
-- Real-world challenges mentioned in SME notes
-
-**YOU MUST USE THESE EXACT TERMS IN YOUR QUESTIONS AND RUBRICS.**
+  const prompt = `You are a subject matter expert in the role that is being hired. Review the JD below for context. In addition, the role is being hired in ${location || "the location specified by the user"}.
 
 JOB DESCRIPTION:
-${jdText || "Enter JD here"}
+${jdText || "No JD provided."}
 
-LOCATION: ${location || "Melbourne, Victoria"}
+Here are notes from the Subject Matter Expert for more context:
+${smeNotes || "No SME notes provided."}
+${customInstructions ? `\nAdditional custom instructions:\n${customInstructions}\n` : ''}
+${companyWebsite ? `Company website: ${companyWebsite}\n` : ''}
+${totalTimeLine}
 
-SME NOTES (Real-world context and priorities):
-${smeNotes || "Enter SME Notes here"}
-${customInstructions ? `\n\nADDITIONAL CUSTOM INSTRUCTIONS:\n${customInstructions}\n` : ''}
-${companyWebsite ? `\n\nCOMPANY WEBSITE: ${companyWebsite}\n` : ''}${existingQuestionsSection}
+Screening slot is ${screeningTime} minutes. Reserve ${SCREENING_BUFFER_MINUTES} minutes for introductions, transitions, and candidate questions. **Content budget for Q&A: ${contentBudget} minutes.** Generate ${totalQuestions} questions total: exactly ${maxQuestions} mandatory (isMandatory: true) and exactly ${bufferQuestions} additional/excluded (isMandatory: false). The sum of estimatedMinutes for mandatory questions MUST NOT exceed ${contentBudget} minutes. Set estimatedMinutes for each question; ensure the total fits.
 
-═══════════════════════════════════════════════════════════════
-🚨 CRITICAL TIME BUDGET CONSTRAINT - ANALYZE AS YOU GENERATE 🚨
-═══════════════════════════════════════════════════════════════
+According to all of this, create questions with expected answers and a screening criteria (Good-fit answer, moderate-fit answer, bad-fit answer) that will be easy for the hiring manager to ask and also conclude if the candidate is a good-fit. Questions can be scenario-based or ask about a skill directly. Exactly ${bufferQuestions} questions must be additional (use "isMandatory": false); the rest are mandatory (isMandatory: true).
 
-**CRITICAL:** The **${screeningTime} minutes** is EXCLUSIVELY for planned Q&A screening questions.
+The objective is so that the hiring manager can save time of the subject matter expert employees by reducing candidates that are clearly not a good-fit and ones that just answer buzzwords and lack needed experience/knowledge.
 
-**NOT INCLUDED IN THIS TIME:**
-- ❌ Introduction/Opening remarks (separate time allocation)
-- ❌ Follow-up questions (asked spontaneously during interview)
-- ❌ Wrap-up/Closing (separate time allocation)
-
-**INCLUDED IN THIS TIME:**
-- ✅ ONLY the ${maxQuestions} main planned screening questions you generate below
-
-Use the FULL ${screeningTime} minutes for planned Q&A questions.
-
-**TIME BREAKDOWN PER QUESTION TYPE:**
-- **SIMPLE question** (debugging steps, tool usage): **EXACTLY 2.0 minutes** total
-  - Ask (20s) + Candidate thinks & answers (90s) + Transition (10s)
-  - Example: "Walk me through debugging a slow API endpoint"
-  
-- **MODERATE question** (scenario/trade-offs): **EXACTLY 2.5 minutes** total  
-  - Ask (20s) + Candidate thinks & answers (120s) + Transition (10s)
-  - Example: "Your database query is slow - what's your diagnostic approach?"
-  
-- **COMPLEX question** (architecture/optimization): **EXACTLY 3.0 minutes** total
-  - Ask (30s) + Candidate thinks & answers (135s) + Transition (15s)
-  - Example: "Design a caching strategy for this high-traffic API"
-
-**YOUR TIME BUDGET (Planned Questions Only):**
-- Total available time: **${screeningTime} minutes**
-- Target average per question: **2.5 minutes**
-- **MAIN QUESTIONS: ${maxQuestions} questions** (mandatory, fit in ${screeningTime} min)
-- **BUFFER QUESTIONS: ${bufferQuestions} questions** (optional, for flexibility if main questions excluded)
-- **TOTAL TO GENERATE: ${totalQuestions} questions**
-
-**QUESTION ALLOCATION:**
-- First ${maxQuestions} questions: Mark as "isMandatory": true (these MUST fit in ${screeningTime} min)
-- Last ${bufferQuestions} questions: Mark as "isMandatory": false (backup/optional questions)
-
-**MANDATORY QUESTION MIX BY COMPLEXITY (for ${maxQuestions} main questions):**
-
-**TIME-OPTIMIZED DISTRIBUTION:**
-- ${dist.simple} SIMPLE questions (2.0 min each): Debugging steps, tool usage, specific techniques
-- ${dist.moderate} MODERATE questions (2.5 min each): Scenario-based, trade-off decisions
-- ${dist.complex} COMPLEX questions (3.0 min each): Architecture, optimization, system design
-
-**This gives: (${dist.simple} × 2.0) + (${dist.moderate} × 2.5) + (${dist.complex} × 3.0) = ${expectedTotalTime.toFixed(1)} minutes**
-
-${screeningTime <= 10 ? `**⚡ SHORT INTERVIEW MODE: Prioritize SIMPLE questions for quick, focused answers!**` : 
-  screeningTime > 20 ? `**🔍 DEEP EVALUATION MODE: Include more COMPLEX questions for thorough assessment!**` : ``}
-
-**QUESTION PATTERNS (ALL MUST BE SCENARIO-BASED):**
-- 35%: Debugging/Troubleshooting ("When X breaks, how do you diagnose and fix it?")
-- 30%: Trade-off decisions ("Choose between A and B - what factors matter?")
-- 20%: Optimization/Performance ("How would you optimize X for Y constraint?")
-- 15%: Production readiness ("How do you ensure X works reliably in production?")
-
-═══════════════════════════════════════════════════════════════
-⏱️ GENERATE ${totalQuestions} QUESTIONS (${maxQuestions} MAIN + ${bufferQuestions} BUFFER)
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL INSTRUCTIONS:**
-1. **Generate exactly ${totalQuestions} questions total:**
-   - First ${maxQuestions} questions: Set "isMandatory": true (main questions)
-   - Last ${bufferQuestions} questions: Set "isMandatory": false (buffer/optional)
-
-2. **Design each question to be answerable in ~2-3 minutes** - avoid overly complex questions
-
-3. **Balance question complexity** - mix quick technical checks (1.5-2 min) with deeper scenarios (2.5-3 min)
-
-4. **Time budget validation:**
-   - Main ${maxQuestions} questions MUST total ≤${screeningTime} minutes (target: ${maxQuestions * 2.5} min)
-   - Buffer questions are NOT counted in time budget (they're backups)
-
-5. **Buffer question purpose:** If interviewer excludes a main question, they can include a buffer question instead
-
-**TIME SCOPE REMINDER:**
-The ${screeningTime} minutes = ONLY planned Q&A screening questions
-NOT included: introduction, follow-ups, closing (these have separate time)
-
-The objective is to help the hiring manager efficiently screen candidates by asking targeted questions that reveal technical competency and filter out candidates who only speak in buzzwords without real experience.
+STRICT: Total estimatedMinutes for isMandatory: true questions must be ≤ ${contentBudget}. Exactly ${bufferQuestions} questions must be isMandatory: false (excluded). Total: ${totalQuestions} questions.
 
 Produce this in a JSON Format.
 
-═══════════════════════════════════════════════════════════════
-📋 STEP 2: EXTRACT JD-SPECIFIC INFORMATION (Mental Checklist)
-═══════════════════════════════════════════════════════════════
+Requirements:
+1. Extract 3-5 key competencies from the JD.
+2. Generate ${totalQuestions} questions total: ${maxQuestions} mandatory (isMandatory: true) and exactly ${bufferQuestions} additional (isMandatory: false). For each question include estimatedMinutes (number) and a rubric with: typicalReasoning (brief expected reasoning), goodSignals (Good-fit answer criteria), moderateSignals (moderate-fit answer criteria), poorSignals (bad-fit answer criteria), and notes.
+3. First ${maxQuestions} questions (total estimatedMinutes ≤ ${contentBudget}): "isMandatory": true. Last ${bufferQuestions} questions: "isMandatory": false.
+4. Use EXACT terms from the JD in questions and rubrics. Focus on practical experience and filter out buzzword-only candidates.
 
-Before writing questions, mentally identify from the JD above:
-- List of SPECIFIC technologies (programming languages, frameworks, databases, cloud platforms)
-- Key technical responsibilities (what will they build, maintain, optimize?)
-- Domain knowledge areas (e.g., payment systems, data pipelines, security)
-- Performance/quality requirements (scalability, testing, monitoring)
+Respond with a JSON object in this exact format. Include estimatedMinutes for each question so the sum of mandatory questions fits within ${contentBudget} minutes.
 
-**Your questions MUST map directly to items on this list.**
 
-═══════════════════════════════════════════════════════════════
-📋 STEP 3: GENERATE JD-ALIGNED QUESTIONS
-═══════════════════════════════════════════════════════════════
-
-Instructions for Output:
-1. **DEEPLY ANALYZE THE JD AND SME NOTES FIRST:**
-   - Extract 3-5 key competencies DIRECTLY from the job description
-   - Focus on the EXACT technical requirements, tools, frameworks, and technologies mentioned
-   - Identify specific responsibilities and domain knowledge areas from the JD
-   - Use SME notes to understand real-world challenges and priorities for this role
-
-2. **Generate EXACTLY ${totalQuestions} questions total (${maxQuestions} main + ${bufferQuestions} buffer):**
-   - First ${maxQuestions} questions: Set "isMandatory": true
-   - Last ${bufferQuestions} questions: Set "isMandatory": false
-   - **CRITICAL**: Every question MUST map to a SPECIFIC requirement or technology mentioned in the JD/SME notes
-   - Do NOT use generic questions that could apply to any role
    
-3. **⏱️ COMPLEXITY CLASSIFICATION (CRITICAL - READ CAREFULLY):**
-
-   **🎯 COMPLEXITY IS DETERMINED BY STRUCTURE, NOT JUST TOPIC:**
-   
-   ═══════════════════════════════════════════════════════════════
-   📗 SIMPLE (2.0 min) - ONE focused concept, ONE clear answer
-   ═══════════════════════════════════════════════════════════════
-   **RULES:**
-   - Asks about ONE specific thing (one tool, one command, one technique)
-   - Can be answered in 3-5 sentences
-   - Has a relatively straightforward "right answer"
-   - Max 25 words in the question
-   
-   **✅ SIMPLE EXAMPLES:**
-   - "How do you check why a Kubernetes pod is in CrashLoopBackOff?" (14 words, ONE diagnostic task)
-   - "What kubectl command shows container logs?" (6 words, ONE command)
-   - "How do you identify a slow PostgreSQL query?" (8 words, ONE technique)
-   
-   **❌ NOT SIMPLE (wrongly classified):**
-   - "Walk me through Dockerfile optimizations AND CI/CD quality gates..." (MULTIPLE concepts = COMPLEX)
-   - "Explain debugging workflow to check OOM, Liveness probe, OR Secrets..." (MULTIPLE scenarios = COMPLEX)
-   
-   ═══════════════════════════════════════════════════════════════
-   📘 MODERATE (2.5 min) - TWO concepts OR one trade-off decision
-   ═══════════════════════════════════════════════════════════════
-   **RULES:**
-   - Compares TWO options OR asks for trade-off analysis
-   - Requires weighing factors, not just listing steps
-   - Can be answered in 5-8 sentences
-   - Max 40 words in the question
-   
-   **✅ MODERATE EXAMPLES:**
-   - "Redis vs PostgreSQL for session storage - what factors drive your choice?" (11 words, TWO options)
-   - "When would you use async vs sync processing in your Python API?" (12 words, trade-off)
-   - "How do you decide between horizontal and vertical scaling for your service?" (12 words, TWO approaches)
-   
-   ═══════════════════════════════════════════════════════════════
-   📕 COMPLEX (3.0 min) - THREE+ concepts OR system design
-   ═══════════════════════════════════════════════════════════════
-   **RULES:**
-   - Involves THREE or more interconnected concepts
-   - Requires architectural thinking or multi-step design
-   - Uses words like "AND", "OR" connecting multiple topics
-   - Can be answered in 8-12 sentences
-   - Can be up to 60 words in the question
-   
-   **✅ COMPLEX EXAMPLES:**
-   - "Your pods are in CrashLoopBackOff. Walk me through checking OOM kills, Liveness probe failures, AND missing Secrets." (THREE things to check = COMPLEX)
-   - "Design a rate limiter for 10 pods using Redis. Why won't sync.Mutex work?" (distributed design + reasoning = COMPLEX)
-   
-   ═══════════════════════════════════════════════════════════════
-   🚨 SELF-CHECK BEFORE ASSIGNING COMPLEXITY:
-   ═══════════════════════════════════════════════════════════════
-   
-   **Count the concepts in your question:**
-   - 1 concept → SIMPLE
-   - 2 concepts OR 1 trade-off → MODERATE  
-   - 3+ concepts OR system design → COMPLEX
-   
-   **Check for these COMPLEXITY ESCALATORS:**
-   - "AND" connecting topics → escalates complexity
-   - "Walk me through" + multiple steps → likely MODERATE or COMPLEX
-   - Multiple technologies mentioned → likely MODERATE or COMPLEX
-   - "Design", "architect", "implement end-to-end" → COMPLEX
-   
-   **TARGET DISTRIBUTION for ${maxQuestions} main questions:**
-   - ${dist.simple} SIMPLE questions (2.0 min each) - ONE concept, max 25 words
-   - ${dist.moderate} MODERATE questions (2.5 min each) - TWO concepts/trade-off, max 40 words
-   - ${dist.complex} COMPLEX questions (3.0 min each) - THREE+ concepts/design, max 60 words
-   - **TOTAL: ${expectedTotalTime.toFixed(1)} minutes (MUST BE ≤ ${screeningTime} minutes)**
-
-3. **Ensure questions are STRONG, RIGOROUS, and JD-ALIGNED:**
-   - At least 70% must be **Deep Scenario-Based** questions using the ACTUAL tools/stack mentioned in the JD
-   - Questions must probe for PRACTICAL EXPERIENCE, not just theoretical knowledge
-   - Include trade-off decisions and real-world constraints (performance, scalability, security)
-   - Ask about challenges, debugging, and problem-solving, not just "how would you..."
-   - Reference SPECIFIC technologies, frameworks, or methodologies from the JD
-   - Address real problems and challenges mentioned in the SME notes
-   - **STRONG Example**: "When your FastAPI endpoint starts timing out under load, how do you identify and fix the bottleneck?"
-   - **WEAK Example**: "What is FastAPI and how does it work?"
-
-4. **Each question must be STRONG and answerable in 2-3 minutes.**
-   - **STRENGTH CHECK**: Questions should separate strong candidates from weak ones
-   - **TIME CHECK**: Can a candidate give a COMPLETE, DETAILED answer in 2-3 minutes?
-   
-   **❌ WEAK QUESTIONS (Too basic, anyone can answer):**
-   - "What is FastAPI?" (Definitional)
-   - "Have you used Docker before?" (Yes/no)
-   - "Tell me about your experience with React" (Too vague)
-   
-   **❌ TOO COMPLEX (4+ minutes):**
-   - "Explain your entire architecture from frontend to database with all the trade-offs"
-   - "Walk me through how you would design a scalable microservices system from scratch"
-   
-   **✅ STRONG QUESTIONS (Probe practical experience & problem-solving, 2-3 min):**
-   - If JD mentions "FastAPI": "Your FastAPI endpoint is returning 504 timeouts after deploying to production. Walk me through your debugging process and common causes you'd check."
-   - If JD mentions "React": "You notice a React dashboard re-rendering on every keystroke, causing lag. How would you identify which component is causing the issue and fix it?"
-   - If JD mentions "PostgreSQL": "A JOIN query between users and orders is taking 8 seconds. What's your step-by-step approach to diagnose and optimize it?"
-   
-   **STRONG QUESTION PATTERNS:**
-   - "When [problem occurs], how do you [diagnose/fix]..."
-   - "You need to [achieve goal] but [constraint]. What's your approach?"
-   - "Walk me through debugging [specific issue] in [technology]"
-   - "What trade-offs would you consider when [technical decision]?"
-   
-   **🎯 MANDATORY COMPLEXITY MIX (${maxQuestions} questions total):**
-   - ${dist.simple} SIMPLE questions (debugging steps, tool usage) - EXACTLY 2.0 min each
-   - ${dist.moderate} MODERATE questions (scenarios, trade-offs) - EXACTLY 2.5 min each
-   - ${dist.complex} COMPLEX questions (architecture, optimization) - EXACTLY 3.0 min each
-   - **Total: (${dist.simple} × 2.0) + (${dist.moderate} × 2.5) + (${dist.complex} × 3.0) = ${expectedTotalTime.toFixed(1)} minutes**
-
 5. **GROUND EVERY QUESTION IN THE JD/SME NOTES WITH STRONG SCENARIOS:**
    - Use SPECIFIC technologies mentioned (e.g., "Docker", "Kubernetes", "React", "PostgreSQL")
    - Reference ACTUAL responsibilities from the JD (e.g., "optimize database queries", "design microservices")
@@ -1087,11 +1002,7 @@ Instructions for Output:
 
 7. NO REVERSE QUESTIONS: Do not generate questions that ask the candidate if they have questions for the interviewer (e.g., "What questions do you have for me?"). Every question must be a technical or scenario-based evaluation of the candidate.
 
-8. UNIQUE AND NON-REPETITIVE: Every question in this set MUST be completely unique from the others. Do not repeat the same concept across different questions.${existingQuestions && existingQuestions.length > 0 ? ' The EXISTING QUESTIONS section above shows questions already used - do NOT repeat or paraphrase them in any way.' : ''}
-
-9. For each question, provide a **RIGOROUS** rubric EXPLICITLY DESIGNED for a non-technical HR interviewer to use for grading as a **'Strength-Assessment' tool**:
-   - **typicalReasoning**: A short, declarative paragraph (2–4 sentences) that (1) states what PRACTICAL SKILL OR EXPERIENCE the question is probing and why it separates strong from weak candidates, (2) names the SPECIFIC technologies/concepts from the JD and the EXACT STEPS or APPROACHES a strong answer must demonstrate, and (3) describes what DEEP, PRACTICAL reasoning looks like (not just theoretical knowledge). Write in clear, direct statements (e.g. "A strong answer will walk through specific debugging steps...", "The ideal response demonstrates hands-on experience by mentioning..."). Reference the ACTUAL tools/frameworks and REAL-WORLD usage from the JD. Explain how this question filters out candidates who only know buzzwords.
-   
+8. UNIQUE AND NON-REPETITIVE: Every question in this set MUST be completely unique from the others. Do not repeat the same concept across different questions.   
    **⚠️ FORBIDDEN IN typicalReasoning:**
    - DO NOT mention time estimates (e.g., "should take 2 minutes", "under 2 minutes")
    - DO NOT mention how long the answer should take
@@ -1149,141 +1060,9 @@ The rubrics must be RIGOROUS and so precise that an interviewer with NO domain k
 
 Avoid generic filler. Direct matches to technical concepts from the JD are mandatory. Each rubric signal should clearly identify what separates strong from weak answers.
 
-═══════════════════════════════════════════════════════════════
-⏱️ MANDATORY TIME VALIDATION BEFORE SUBMITTING ⏱️
-═══════════════════════════════════════════════════════════════
 
-**STOP! Before you output the JSON, VERIFY EACH ITEM:**
+**RUBRICS:** Exact JD terminology; goodSignals (Good-fit), moderateSignals (moderate-fit), poorSignals (bad-fit).
 
-1. ✓ Question count: Exactly ${totalQuestions} questions total (count them manually!)
-   - First ${maxQuestions} questions: "isMandatory": true
-   - Last ${bufferQuestions} questions: "isMandatory": false
-
-2. ✓ Complexity distribution (MANDATORY mix for ${maxQuestions} main questions):
-   - ${dist.simple} SIMPLE questions @ 2.0 min each = ${(dist.simple * 2.0).toFixed(1)} min
-   - ${dist.moderate} MODERATE questions @ 2.5 min each = ${(dist.moderate * 2.5).toFixed(1)} min
-   - ${dist.complex} COMPLEX questions @ 3.0 min each = ${(dist.complex * 3.0).toFixed(1)} min
-   - **TOTAL MUST BE: ${expectedTotalTime.toFixed(1)} minutes**
-
-3. ✓ Time calculation (ONLY the ${maxQuestions} MAIN questions):
-   - Use the EXACT complexity distribution above
-   - Target total: **${expectedTotalTime.toFixed(1)} minutes** (within ${screeningTime} min budget)
-   - Buffer questions are NOT counted in time budget
-   - DO NOT exceed ${screeningTime} minutes for main questions
-
-4. ✓ **🚨 COMPLEXITY VALIDATION (DO THIS FOR EVERY QUESTION):**
-   
-   **For each question you mark as SIMPLE, verify:**
-   - [ ] Contains only ONE concept/topic? (If "AND" connects topics → NOT SIMPLE)
-   - [ ] Max 25 words? (Count them!)
-   - [ ] Does NOT ask for multiple steps? (If "walk me through X, Y, AND Z" → NOT SIMPLE)
-   - [ ] Does NOT mention 3+ technologies? (If Docker + CI/CD + Kubernetes → NOT SIMPLE)
-   
-   **For each question you mark as MODERATE, verify:**
-   - [ ] Contains exactly TWO concepts OR one trade-off?
-   - [ ] Max 40 words?
-   - [ ] Does NOT require system design thinking?
-   
-   **For each question you mark as COMPLEX, verify:**
-   - [ ] Contains THREE+ interconnected concepts?
-   - [ ] OR requires architectural/system design thinking?
-   - [ ] Max 60 words?
-
-5. ✓ **WORD COUNT ENFORCEMENT:**
-   - SIMPLE: ≤25 words (if longer, it's probably MODERATE or COMPLEX)
-   - MODERATE: ≤40 words
-   - COMPLEX: ≤60 words
-   
-6. ✓ **MISCLASSIFICATION CHECK (READ CAREFULLY):**
-   ❌ WRONG: "Walk me through Dockerfile optimizations AND CI/CD quality gates for Python, Java, or Go..." marked as SIMPLE
-   ✅ CORRECT: This has 3+ concepts (Dockerfile + CI/CD + multiple languages) → must be COMPLEX
-   
-   ❌ WRONG: "Debug CrashLoopBackOff checking OOM, Liveness probe, OR Secrets" marked as SIMPLE  
-   ✅ CORRECT: This has 3 scenarios to check → must be COMPLEX
-   
-   ❌ WRONG: "How do you check pod logs?" marked as COMPLEX
-   ✅ CORRECT: This is ONE simple command → must be SIMPLE
-
-7. ✓ Each question tests ONE specific skill and can be answered concisely with concrete examples
-
-8. ✓ **FINAL COMPLEXITY ACCURACY CHECK:**
-   - Count concepts in each SIMPLE question - must be exactly 1
-   - Count concepts in each MODERATE question - must be exactly 2 or 1 trade-off
-   - Count concepts in each COMPLEX question - must be 3+ or system design
-   
-10. ✓ QUESTION STRENGTH CHECK (CRITICAL):
-   - Every question tests PRACTICAL EXPERIENCE, not just theoretical knowledge
-   - At least 70% are scenario-based (debugging, trade-offs, problem-solving)
-   - Questions will separate strong candidates from weak ones
-   - No questions that can be answered with memorized definitions
-   - No "Have you used X?" or "What is X?" questions
-   
-11. ✓ JD/SME ALIGNMENT CHECK (CRITICAL):
-   - Every question references SPECIFIC technologies/tools from the JD
-   - Questions address ACTUAL responsibilities listed in the JD
-   - No generic questions that could apply to any role
-   - Rubric signals use the EXACT terminology from the JD
-   - If the JD mentions "FastAPI", questions/rubrics say "FastAPI", NOT "Python web framework"
-
-12. ✓ RUBRIC RIGOR CHECK:
-   - Good signals prove HANDS-ON experience with specific examples/steps
-   - Moderate signals show surface knowledge without depth
-   - Poor signals identify buzzword users and dangerous practices
-   - Signals clearly differentiate junior vs mid vs senior candidates
-
-═══════════════════════════════════════════════════════════════
-🎯 FINAL MANDATORY REQUIREMENTS CHECKLIST
-═══════════════════════════════════════════════════════════════
-
-**QUESTION COUNT:** Generate EXACTLY ${totalQuestions} questions
-- First ${maxQuestions} questions: "isMandatory": true
-- Last ${bufferQuestions} questions: "isMandatory": false
-
-**⏱️ TIME-BOUNDED GENERATION (CRITICAL):**
-For EACH question, you MUST assign:
-- "complexity": "simple" | "moderate" | "complex"
-- "estimatedMinutes": 2.0 (simple) | 2.5 (moderate) | 3.0 (complex)
-
-**🚨 COMPLEXITY CLASSIFICATION RULES (MUST FOLLOW):**
-| Complexity | # Concepts | Max Words | Example Pattern |
-|------------|------------|-----------|-----------------|
-| SIMPLE     | 1          | 25        | "How do you X?" |
-| MODERATE   | 2 or trade-off | 40   | "X vs Y - what factors?" |
-| COMPLEX    | 3+ or design | 60     | "Design X considering A, B, and C" |
-
-**⚠️ BEFORE MARKING ANY QUESTION AS SIMPLE:**
-- Does it have "AND" connecting multiple topics? → NOT SIMPLE, upgrade to MODERATE or COMPLEX
-- Does it mention 3+ technologies? → NOT SIMPLE, upgrade to COMPLEX
-- Does it say "walk me through" multiple scenarios? → NOT SIMPLE, upgrade to COMPLEX
-
-**COMPLEXITY MIX (for ${maxQuestions} main questions):**
-- ${dist.simple} SIMPLE @ 2.0 min = ${(dist.simple * 2.0).toFixed(1)} min (1 concept, ≤25 words each)
-- ${dist.moderate} MODERATE @ 2.5 min = ${(dist.moderate * 2.5).toFixed(1)} min (2 concepts, ≤40 words each)
-- ${dist.complex} COMPLEX @ 3.0 min = ${(dist.complex * 3.0).toFixed(1)} min (3+ concepts, ≤60 words each)
-- **TOTAL Q&A TIME: ${expectedTotalTime.toFixed(1)} minutes (≤${screeningTime} min Q&A budget)**
-
-${screeningTime <= 10 ? `**⚡ SHORT INTERVIEW (${screeningTime} min): Generate simpler, focused questions!**` : 
-  screeningTime > 20 ? `**🔍 DEEP INTERVIEW (${screeningTime} min): Include more complex questions!**` : ``}
-
-**INCLUDE timeAnalysis OBJECT:**
-After questions array, include:
-{
-  "timeAnalysis": {
-    "totalMinutes": <sum of all main question estimatedMinutes>,
-    "breakdown": { "simple": X, "moderate": Y, "complex": Z },
-    "withinBudget": <true if totalMinutes <= ${screeningTime}>,
-    "summary": "<X simple + Y moderate + Z complex = total min>"
-  }
-}
-
-**⚠️ TIME SCOPE:** ${screeningTime} min = ONLY planned Q&A questions (excludes intro/follow-ups/outro)
-
-**QUESTION STRENGTH:** 70%+ scenario-based, ALL JD-SPECIFIC & RIGOROUS
-**RUBRICS:** Exact JD terminology, 5 signals each (good/moderate/poor)
-
-═══════════════════════════════════════════════════════════════
-
-Respond with a JSON object in this exact format:
 {
   "competencies": [
     {
@@ -1366,36 +1145,30 @@ Only output valid JSON. No markdown code blocks.`;
         description: c.description,
       }));
       
-      let correctedCount = 0;
       const questions: ScreeningQuestion[] = (parsed.questions || []).map((q: any, idx: number) => {
-        // Extract complexity from AI response, validate it
+        // Complexity and estimatedMinutes are optional (model may omit when Gemini decides question mix)
         let complexity = q.complexity || "moderate";
         if (!["simple", "moderate", "complex"].includes(complexity)) {
           complexity = "moderate";
         }
-        
-        // AUTO-CORRECT complexity based on word count and content analysis
-        // The AI often misclassifies complex questions as simple
-        const corrected = autoCorrectComplexity({ ...q, complexity });
-        if (corrected.corrected) {
-          correctedCount++;
+        let estimatedMinutes = q.estimatedMinutes;
+        if (estimatedMinutes == null || typeof estimatedMinutes !== "number") {
+          estimatedMinutes = DEFAULT_ESTIMATED_MINUTES;
         }
+        // Optionally auto-correct complexity only when model provided it
+        const corrected = q.complexity ? autoCorrectComplexity({ ...q, complexity }) : { complexity, estimatedMinutes, corrected: false };
         
         return {
           id: q.id || `q_${generateId()}`,
           competencyId: q.competencyId,
           question: q.question,
           complexity: corrected.complexity,
-          estimatedMinutes: corrected.estimatedMinutes,
-          rubric: q.rubric,
+          estimatedMinutes: corrected.estimatedMinutes ?? estimatedMinutes,
+          rubric: q.rubric || { typicalReasoning: "", goodSignals: [], moderateSignals: [], poorSignals: [], notes: "" },
           isMandatory: q.isMandatory ?? true,
           order: q.order || idx + 1,
         };
       });
-      
-      if (correctedCount > 0) {
-        geminiLog.info(`Auto-corrected ${correctedCount} question(s) with wrong complexity classification`);
-      }
       
       // Extract AI's time analysis if provided
       const timeAnalysis = parsed.timeAnalysis || null;
@@ -1508,9 +1281,19 @@ Respond with ONLY the full JSON object in the same format. No markdown.`;
       }
     }
 
-    // Reorder and enforce final time budget
+    // Reorder, then ask Gemini to do proper time analysis and select which questions fit in screening time
     questions = questions.map((q, idx) => ({ ...q, order: idx + 1 }));
-    questions = enforceTimeBudget(questions, interviewDuration);
+    let inclusionResult: { includedIds: string[] } | null = null;
+    {
+      const contentBudget = Math.max(5, screeningTime - SCREENING_BUFFER_MINUTES);
+      const analysisResult = await analyzeAndSelectIncludedQuestions(questions, screeningTime, contentBudget);
+      if (analysisResult) {
+        inclusionResult = { includedIds: analysisResult.includedIds };
+        const includedSet = new Set(analysisResult.includedIds);
+        questions = questions.map((q) => ({ ...q, isMandatory: includedSet.has(q.id) }));
+      }
+    }
+    questions = enforceTimeBudget(questions, interviewDuration, { useGeminiInclusion: !!inclusionResult });
 
     const finalMandatory = questions.filter(q => q.isMandatory !== false);
     const finalBuffer = questions.filter(q => q.isMandatory === false);
@@ -1575,14 +1358,16 @@ async function extractCompetenciesAndQuestionsBatched(
   location?: string,
   interviewDuration?: number,
   existingQuestions?: ScreeningQuestion[],
-  chatHistory: AIChatMessage[] = []
+  chatHistory: AIChatMessage[] = [],
+  totalInterviewMinutes?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
-  const maxQuestions = calculateMaxQuestions(interviewDuration);
-  const bufferQuestions = calculateBufferQuestions(maxQuestions);
-  const totalQuestions = maxQuestions + bufferQuestions;
   const screeningTime = interviewDuration || 15;
+  const band = getBandForScreening(screeningTime);
+  const totalQuestions = band.questionCount;
+  const maxQuestions = band.includedCount;
+  const bufferQuestions = band.excludedCount;
   
-  geminiLog.info(`Batched generation: ${totalQuestions} questions in batches of ${MAX_QUESTIONS_PER_BATCH}`);
+  geminiLog.info(`Batched generation: ${totalQuestions} questions (${maxQuestions} included + ${bufferQuestions} excluded) in batches of ${MAX_QUESTIONS_PER_BATCH}`);
   
   // Calculate how many batches we need
   const numBatches = Math.ceil(totalQuestions / MAX_QUESTIONS_PER_BATCH);
@@ -1608,8 +1393,8 @@ async function extractCompetenciesAndQuestionsBatched(
     // For the first batch, get competencies too
     // For subsequent batches, only get questions using the established competencies
     const batchPrompt = isFirstBatch
-      ? buildFirstBatchPrompt(jdText, smeNotes, customInstructions, companyWebsite, location, questionsNeeded, screeningTime, existingQuestions)
-      : buildSubsequentBatchPrompt(jdText, competencies, questionsNeeded, allQuestions, screeningTime);
+      ? buildFirstBatchPrompt(jdText, smeNotes, customInstructions, companyWebsite, location, questionsNeeded, screeningTime, existingQuestions, totalInterviewMinutes)
+      : buildSubsequentBatchPrompt(jdText, competencies, questionsNeeded, allQuestions, screeningTime, totalInterviewMinutes);
     
     try {
       const { text, history: updatedHistory } = await sendMessageWithRetries(batchPrompt, currentHistory);
@@ -1632,23 +1417,26 @@ async function extractCompetenciesAndQuestionsBatched(
         }));
       }
       
-      // Process questions with auto-correction
+      // Process questions; complexity/estimatedMinutes optional (model may omit when Gemini decides)
       const batchQuestions = (parsed.questions || []).map((q: AIQuestionResponse, idx: number) => {
         let complexity = q.complexity || "moderate";
         if (!["simple", "moderate", "complex"].includes(complexity)) {
           complexity = "moderate";
         }
-        
-        const corrected = autoCorrectComplexity({ question: q.question, complexity });
+        let estimatedMinutes = q.estimatedMinutes;
+        if (estimatedMinutes == null || typeof estimatedMinutes !== "number") {
+          estimatedMinutes = DEFAULT_ESTIMATED_MINUTES;
+        }
+        const corrected = q.complexity ? autoCorrectComplexity({ question: q.question, complexity }) : { complexity: complexity as "simple" | "moderate" | "complex", estimatedMinutes, corrected: false };
         
         return {
           id: q.id || `q_${generateId()}`,
           competencyId: q.competencyId || competencies[idx % competencies.length]?.id || "comp_1",
           question: q.question,
           complexity: corrected.complexity,
-          estimatedMinutes: corrected.estimatedMinutes,
+          estimatedMinutes: corrected.estimatedMinutes ?? estimatedMinutes,
           rubric: q.rubric || { typicalReasoning: "", goodSignals: [], moderateSignals: [], poorSignals: [], notes: "" },
-          isMandatory: allQuestions.length + idx < maxQuestions, // First maxQuestions are mandatory
+          isMandatory: allQuestions.length + idx < maxQuestions,
           order: allQuestions.length + idx + 1,
         };
       });
@@ -1676,10 +1464,20 @@ async function extractCompetenciesAndQuestionsBatched(
     isMandatory: idx < maxQuestions,
     order: idx + 1,
   }));
-  
-  // Enforce time budget
-  allQuestions = enforceTimeBudget(allQuestions, interviewDuration);
-  
+
+  // Ask Gemini to do proper time analysis and select which questions fit in screening time
+  let inclusionResult: { includedIds: string[] } | null = null;
+  {
+    const contentBudget = Math.max(5, screeningTime - SCREENING_BUFFER_MINUTES);
+    const analysisResult = await analyzeAndSelectIncludedQuestions(allQuestions, screeningTime, contentBudget);
+    if (analysisResult) {
+      inclusionResult = { includedIds: analysisResult.includedIds };
+      const includedSet = new Set(analysisResult.includedIds);
+      allQuestions = allQuestions.map((q) => ({ ...q, isMandatory: includedSet.has(q.id) }));
+    }
+  }
+  allQuestions = enforceTimeBudget(allQuestions, interviewDuration, { useGeminiInclusion: !!inclusionResult });
+
   const finalCounts = countByComplexity(allQuestions.filter(q => q.isMandatory) as Array<{ complexity?: string }>);
   const finalTime = calculateTotalMinutes(finalCounts);
   
@@ -1689,7 +1487,8 @@ async function extractCompetenciesAndQuestionsBatched(
 }
 
 /**
- * Build prompt for the first batch (includes competency extraction)
+ * Build prompt for the first batch (includes competency extraction).
+ * Uses SME-style wording; screening and total interview time only—no complexity tiers; Gemini decides question count and types.
  */
 function buildFirstBatchPrompt(
   jdText: string,
@@ -1699,48 +1498,57 @@ function buildFirstBatchPrompt(
   location: string | undefined,
   questionsNeeded: number,
   screeningTime: number,
-  existingQuestions?: ScreeningQuestion[]
+  existingQuestions?: ScreeningQuestion[],
+  totalInterviewMinutes?: number
 ): string {
   const existingQuestionsSection = existingQuestions && existingQuestions.length > 0
     ? `\n\nEXISTING QUESTIONS (DO NOT DUPLICATE):\n${existingQuestions.map((q, i) => `${i + 1}. ${q.question}`).join('\n')}\n`
     : '';
-    
-  return `You are a subject matter expert. Generate ${questionsNeeded} screening questions for this role.
+  const totalTimeLine = totalInterviewMinutes != null && totalInterviewMinutes > 0
+    ? `\nTotal interview time for this slot is ${totalInterviewMinutes} minutes. Do not exceed the screening time and keep the overall flow within total interview time.\n`
+    : '';
+  const contentBudget = Math.max(5, screeningTime - SCREENING_BUFFER_MINUTES);
+  const band = getBandForScreening(screeningTime);
+  const mandatoryCount = band.includedCount;
+  const excludedCount = band.excludedCount;
 
-JOB DESCRIPTION:
-${jdText || "No JD provided"}
+  return `You are a subject matter expert in the role that is being hired. Review the JD below for context. In addition, the role is being hired in ${location || "the location specified by the user"}.
 
-${smeNotes ? `SME NOTES:\n${smeNotes}\n` : ''}
-${customInstructions ? `CUSTOM INSTRUCTIONS:\n${customInstructions}\n` : ''}
-${companyWebsite ? `COMPANY WEBSITE: ${companyWebsite}\n` : ''}
-LOCATION: ${location || "Not specified"}
+Here are notes from the Subject Matter Expert for more context:
+${smeNotes || "No SME notes provided."}
+${customInstructions ? `\nAdditional custom instructions:\n${customInstructions}\n` : ''}
+${companyWebsite ? `Company website: ${companyWebsite}\n` : ''}
+${totalTimeLine}
+
+Screening slot is ${screeningTime} minutes. Reserve ${SCREENING_BUFFER_MINUTES} minutes for introductions, transitions, and candidate questions. **Content budget for Q&A: ${contentBudget} minutes.** Generate ${questionsNeeded} questions total: exactly ${mandatoryCount} mandatory (isMandatory: true) and exactly ${excludedCount} additional/excluded (isMandatory: false). The sum of estimatedMinutes for mandatory questions MUST NOT exceed ${contentBudget} minutes. Set estimatedMinutes for each question; ensure the total fits.
+
+According to all of this, create questions with expected answers and a screening criteria (Good-fit answer, moderate-fit answer, bad-fit answer) that will be easy for the hiring manager to ask and also conclude if the candidate is a good-fit. Questions can be scenario-based or ask about a skill directly. Exactly ${excludedCount} questions must be additional (use "isMandatory": false); the rest are mandatory (isMandatory: true).
+
+The objective is so that the hiring manager can save time of the subject matter expert employees by reducing candidates that are clearly not a good-fit and ones that just answer buzzwords and lack needed experience/knowledge.
+
+STRICT: Total estimatedMinutes for isMandatory: true questions must be ≤ ${contentBudget}. Exactly ${excludedCount} questions must be isMandatory: false (excluded). Total: ${questionsNeeded} questions. Do not exceed total interview time${totalInterviewMinutes != null && totalInterviewMinutes > 0 ? ` (${totalInterviewMinutes} minutes)` : ""}.
 ${existingQuestionsSection}
 
-REQUIREMENTS:
-1. Extract 3-5 key competencies from the JD
-2. Generate exactly ${questionsNeeded} scenario-based questions
-3. For EACH question, assign complexity: "simple" (2.0 min), "moderate" (2.5 min), or "complex" (3.0 min)
-4. Include detailed rubrics with exactly 5 signals each (goodSignals, moderateSignals, poorSignals)
+Produce this in JSON format.
 
-COMPLEXITY RULES:
-- SIMPLE (≤25 words, 1 concept): "How do you debug X?"
-- MODERATE (≤40 words, 2 concepts): "X vs Y - what factors?"
-- COMPLEX (≤60 words, 3+ concepts): "Design X considering A, B, and C"
+Requirements:
+1. Extract 3-5 key competencies from the JD.
+2. Generate ${questionsNeeded} questions total: ${mandatoryCount} mandatory (isMandatory: true) and exactly ${excludedCount} additional (isMandatory: false). For each question include estimatedMinutes (number) and a rubric with: typicalReasoning (brief expected reasoning), goodSignals (Good-fit answer criteria), moderateSignals (moderate-fit answer criteria), poorSignals (bad-fit answer criteria), and notes.
+3. First ${mandatoryCount} questions (total estimatedMinutes ≤ ${contentBudget}): "isMandatory": true. Last ${excludedCount} questions: "isMandatory": false.
 
-Respond with JSON:
+JSON shape:
 {
   "competencies": [{ "id": "comp_1", "name": "...", "description": "..." }],
   "questions": [{
     "id": "q_1",
     "competencyId": "comp_1",
     "question": "...",
-    "complexity": "simple" | "moderate" | "complex",
-    "estimatedMinutes": 2.0 | 2.5 | 3.0,
+    "estimatedMinutes": 2.5,
     "rubric": {
       "typicalReasoning": "...",
-      "goodSignals": ["...", "...", "...", "...", "..."],
-      "moderateSignals": ["...", "...", "...", "...", "..."],
-      "poorSignals": ["...", "...", "...", "...", "..."],
+      "goodSignals": ["...", "..."],
+      "moderateSignals": ["...", "..."],
+      "poorSignals": ["...", "..."],
       "notes": "..."
     },
     "isMandatory": true,
@@ -1752,18 +1560,24 @@ Only output valid JSON. No markdown.`;
 }
 
 /**
- * Build prompt for subsequent batches (uses existing competencies)
+ * Build prompt for subsequent batches (uses existing competencies).
+ * Same time and rubric wording as first batch; no complexity tiers.
  */
 function buildSubsequentBatchPrompt(
   jdText: string,
   competencies: Competency[],
   questionsNeeded: number,
   existingQuestions: ScreeningQuestion[],
-  screeningTime: number
+  screeningTime: number,
+  totalInterviewMinutes?: number
 ): string {
   const competencyList = competencies.map(c => `- ${c.id}: ${c.name}`).join('\n');
   const existingList = existingQuestions.map((q, i) => `${i + 1}. ${q.question}`).join('\n');
-  
+  const totalTimeLine = totalInterviewMinutes != null && totalInterviewMinutes > 0
+    ? ` Total interview time is ${totalInterviewMinutes} minutes—do not exceed it.`
+    : '';
+  const contentBudget = Math.max(5, screeningTime - SCREENING_BUFFER_MINUTES);
+
   return `Continue generating ${questionsNeeded} MORE screening questions for this role.
 
 JOB DESCRIPTION:
@@ -1775,16 +1589,14 @@ ${competencyList}
 ALREADY GENERATED (DO NOT REPEAT):
 ${existingList}
 
-REQUIREMENTS:
-1. Generate exactly ${questionsNeeded} NEW unique questions
-2. Distribute across the existing competencies
-3. Assign complexity: "simple" (2.0 min), "moderate" (2.5 min), or "complex" (3.0 min)
-4. Include detailed rubrics with exactly 5 signals each
+Screening slot is ${screeningTime} minutes; content budget for Q&A is ${contentBudget} minutes (reserve ${SCREENING_BUFFER_MINUTES} min for intros/transitions). The full set must have exactly ${getBandForScreening(screeningTime).excludedCount} questions with isMandatory: false (excluded); the rest mandatory. The sum of estimatedMinutes for isMandatory: true questions MUST NOT exceed ${contentBudget}. Set estimatedMinutes for each question.${totalTimeLine}
+Use the same rubric shape: typicalReasoning, goodSignals (Good-fit), moderateSignals (moderate-fit), poorSignals (bad-fit), notes.
 
-COMPLEXITY RULES:
-- SIMPLE (≤25 words, 1 concept): "How do you debug X?"
-- MODERATE (≤40 words, 2 concepts): "X vs Y - what factors?"
-- COMPLEX (≤60 words, 3+ concepts): "Design X considering A, B, and C"
+REQUIREMENTS:
+1. Generate exactly ${questionsNeeded} NEW unique questions.
+2. Distribute across the existing competencies.
+3. Include estimatedMinutes (number) per question and rubrics with Good-fit / moderate-fit / bad-fit criteria (goodSignals, moderateSignals, poorSignals).
+4. Ensure the full question set has exactly ${getBandForScreening(screeningTime).excludedCount} additional (isMandatory: false) and that total estimatedMinutes for mandatory questions does not exceed ${contentBudget}.
 
 Respond with JSON (NO competencies array, only questions):
 {
@@ -1792,9 +1604,14 @@ Respond with JSON (NO competencies array, only questions):
     "id": "q_${existingQuestions.length + 1}",
     "competencyId": "comp_1",
     "question": "...",
-    "complexity": "simple" | "moderate" | "complex",
-    "estimatedMinutes": 2.0 | 2.5 | 3.0,
-    "rubric": { ... },
+    "estimatedMinutes": 2.5,
+    "rubric": {
+      "typicalReasoning": "...",
+      "goodSignals": ["...", "..."],
+      "moderateSignals": ["...", "..."],
+      "poorSignals": ["...", "..."],
+      "notes": "..."
+    },
     "isMandatory": true,
     "order": ${existingQuestions.length + 1}
   }]
@@ -1811,7 +1628,8 @@ export async function regenerateQuestionsWithInstructions(
   location?: string,
   interviewDuration?: number,
   existingQuestions?: ScreeningQuestion[],
-  chatHistory: AIChatMessage[] = []
+  chatHistory: AIChatMessage[] = [],
+  totalInterviewMinutes?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
   return extractCompetenciesAndQuestions(
     jdText,
@@ -1821,7 +1639,8 @@ export async function regenerateQuestionsWithInstructions(
     location,
     interviewDuration,
     existingQuestions,
-    chatHistory
+    chatHistory,
+    totalInterviewMinutes
   );
 }
 
@@ -2005,9 +1824,10 @@ Transform each question into a REAL-WORLD SCENARIO the candidate would face in T
 - GOOD: "You need to integrate [JD-specific-API/service] with our [JD-mentioned-system]. What's your approach to handling rate limits and failures?"
 
 **RULE 3: COMPLEXITY CALIBRATION**
-- Simple (2 min): Direct debugging step, specific tool usage, quick technical decision
-- Moderate (2.5 min): Trade-off analysis, approach explanation, problem diagnosis  
-- Complex (3 min): Architecture decision, system design, multi-step optimization
+- Simple: Direct debugging step, specific tool usage, quick technical decision
+- Moderate: Trade-off analysis, approach explanation, problem diagnosis  
+- Complex: Architecture decision, system design, multi-step optimization
+Set estimatedMinutes per question as appropriate (no fixed 2.0/2.5/3.0).
 
 **RULE 4: RUBRIC PRECISION**
 For each question, rubric signals MUST:
@@ -2041,7 +1861,7 @@ Return EXACTLY ${batch.length} refined questions. Keep same id and competencyId.
       "competencyId": "original_competencyId", 
       "question": "JD-specific scenario-based question",
       "complexity": "simple|moderate|complex",
-      "estimatedMinutes": 2.0|2.5|3.0,
+      "estimatedMinutes": 2.5
       "rubric": {
         "typicalReasoning": "Expected answer using JD-specific technologies",
         "goodSignals": ["5 JD-specific positive indicators"],
@@ -2439,6 +2259,7 @@ function classifyQuestionComplexity(question: string): "simple" | "moderate" | "
 
 /**
  * Analyze screening questions and estimate interview time using Gemini AI.
+ * Estimates time per question (interviewer ask + candidate think/respond) without complexity classification.
  */
 export async function analyzeQuestionTime(
   questions: ScreeningQuestion[],
@@ -2450,7 +2271,6 @@ export async function analyzeQuestionTime(
     questionId: string;
     questionText: string;
     estimatedMinutes: number;
-    complexity: "simple" | "moderate" | "complex";
     reasoning: string;
   }>;
   summary: string;
@@ -2458,60 +2278,17 @@ export async function analyzeQuestionTime(
   withinBudget: boolean;
 }> {
   const includedQuestions = questions.filter(q => q.isMandatory);
-  
+
   if (includedQuestions.length === 0) {
     return {
       totalEstimatedMinutes: 0,
       breakdown: [],
       summary: "No Q&A screening questions are currently included in the interview.",
-      recommendation: "Add planned Q&A questions to get a time estimate (excludes intro/follow-ups/outro).",
+      recommendation: "Add planned Q&A questions to get a time estimate.",
       withinBudget: true,
     };
   }
 
-  // Check if ALL questions already have AI-assigned complexity
-  const allHaveComplexity = includedQuestions.every((q: any) => 
-    q.complexity && ["simple", "moderate", "complex"].includes(q.complexity)
-  );
-  
-  // If all questions have pre-assigned complexity, use them directly without AI call
-  if (allHaveComplexity) {
-    geminiLog.info("Using pre-assigned complexity from question generation (no AI call needed)");
-    
-    const breakdown = includedQuestions.map((q) => {
-      const qWithComplexity = q as ScreeningQuestion & { complexity: "simple" | "moderate" | "complex" };
-      return {
-        questionId: q.id,
-        questionText: q.question.substring(0, 60) + (q.question.length > 60 ? "..." : ""),
-        estimatedMinutes: TIME_ESTIMATES[qWithComplexity.complexity],
-        complexity: qWithComplexity.complexity,
-        reasoning: `AI-assigned during question generation: ${qWithComplexity.complexity} question`,
-      };
-    });
-    
-    const counts = countByComplexity(breakdown);
-    const totalEstimatedMinutes = calculateTotalMinutes(counts);
-    const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
-    
-    // Use utility functions for summary and recommendation
-    const summary = generateTimeSummary(counts, totalEstimatedMinutes);
-    const recommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
-    
-    geminiLog.info(`Pre-assigned complexity analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
-    geminiLog.info(`Breakdown: ${counts.simple} simple × 2.0 + ${counts.moderate} moderate × 2.5 + ${counts.complex} complex × 3.0 = ${totalEstimatedMinutes.toFixed(1)} min`);
-    
-    return {
-      totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
-      breakdown,
-      summary,
-      recommendation,
-      withinBudget,
-    };
-  }
-  
-  // If questions don't have pre-assigned complexity, ask AI to analyze
-  geminiLog.info("Questions don't have pre-assigned complexity, asking AI to analyze");
-  
   const questionsText = includedQuestions.map((q: any, i) => {
     const comp = competencies.find(c => c.id === q.competencyId);
     return `${i + 1}. [${comp?.name || "General"}] ${q.question}`;
@@ -2519,74 +2296,42 @@ export async function analyzeQuestionTime(
 
   const prompt = `You are an expert interview consultant analyzing screening questions for a technical interview.
 
-TASK: Estimate the time needed for each question based on its complexity and scope.
+TASK: Estimate the time needed for each question and provide an analysis.
 
 QUESTIONS TO ANALYZE:
 ${questionsText}
 
 CONFIGURED SCREENING TIME: ${configuredScreeningTime} minutes
 
-**IMPORTANT:** This ${configuredScreeningTime} minutes is EXCLUSIVELY for the planned Q&A screening questions listed above.
-NOT included in this time: introduction, follow-up questions, or closing remarks (those have separate time allocation).
-Your analysis should ONLY estimate time for the planned questions listed.
-
-TIME STANDARDS (use these EXACT values):
-- **SIMPLE questions** (debugging steps, tool usage, specific techniques): **EXACTLY 2.0 minutes**
-  - Ask (20s) + Candidate answers with specific steps (90s) + Transition (10s)
-  - Examples: "Walk me through debugging a slow API", "What command checks PostgreSQL locks?"
-  
-- **MODERATE questions** (scenarios, trade-offs, problem-solving): **EXACTLY 2.5 minutes**
-  - Ask (20s) + Candidate explains approach with reasoning (120s) + Transition (10s)
-  - Examples: "Choose between Redis vs Memcached for caching", "Your query is slow - what's your diagnostic approach?"
-  
-- **COMPLEX questions** (architecture, optimization, design decisions): **EXACTLY 3.0 minutes**
-  - Ask (30s) + Candidate designs solution with trade-offs (135s) + Transition (15s)
-  - Examples: "Design a caching strategy for high-traffic API", "Optimize database schema for scalability"
-
-CLASSIFICATION CRITERIA:
-- **SIMPLE**: Asks for specific debugging steps, tool commands, or concrete techniques. Candidate lists steps or describes a process.
-- **MODERATE**: Presents a scenario requiring trade-off analysis, problem-solving, or approach explanation. Candidate must reason through options.
-- **COMPLEX**: Requires architectural thinking, system design, optimization strategy, or multi-faceted decisions. Candidate must design a solution.
-
-For each question, classify it as simple/moderate/complex and assign the EXACT time value (2.0, 2.5, or 3.0).
+For each question, estimate in minutes:
+- How long it will take for the interviewer to ask the question
+- How long it will take for the candidate to think and respond
 
 Respond with a JSON object:
 {
-  "totalEstimatedMinutes": <MUST equal sum of all estimatedMinutes in breakdown>,
+  "totalEstimatedMinutes": <number>,
   "breakdown": [
     {
-      "questionId": "q_1",
-      "questionText": "<first 60 chars>...",
-      "estimatedMinutes": 2.0 | 2.5 | 3.0,
-      "complexity": "simple" | "moderate" | "complex",
-      "reasoning": "<1 sentence explaining WHY this complexity level>"
+      "questionId": "<question_id>",
+      "questionText": "<first 50 chars of question>...",
+      "estimatedMinutes": <number>,
+      "reasoning": "<brief explanation>"
     }
   ],
-  "summary": "<MUST include exact counts that match breakdown: X simple (2.0 min each), Y moderate (2.5 min each), Z complex (3.0 min each). Total must match X+Y+Z and totalEstimatedMinutes must match (X×2.0)+(Y×2.5)+(Z×3.0). Excludes intro/follow-ups.>",
-  "recommendation": "<actionable recommendation based on Q&A time budget>",
-  "withinBudget": <true if totalEstimatedMinutes <= ${configuredScreeningTime}, false otherwise>
+  "summary": "<2-3 sentence summary of the time analysis>",
+  "recommendation": "<actionable recommendation based on time budget>",
+  "withinBudget": <boolean - true if total <= configured time>
 }
-
-CRITICAL VALIDATION REQUIREMENTS:
-1. Use ONLY 2.0, 2.5, or 3.0 for estimatedMinutes (no other values)
-2. totalEstimatedMinutes MUST equal the exact sum of all breakdown[].estimatedMinutes
-3. summary MUST show counts that match the breakdown array exactly:
-   - Count how many questions have complexity="simple" → that's your simple count
-   - Count how many questions have complexity="moderate" → that's your moderate count  
-   - Count how many questions have complexity="complex" → that's your complex count
-   - simple_count + moderate_count + complex_count MUST equal ${includedQuestions.length} (total questions)
-4. Time calculation in summary: (simple_count × 2.0) + (moderate_count × 2.5) + (complex_count × 3.0) = totalEstimatedMinutes
-5. VERIFY your math before responding!
 
 Only output valid JSON. No markdown code blocks.`;
 
   try {
     if (!apiKey) {
-      geminiLog.warn("API key not set, using fallback classification");
+      geminiLog.warn("API key not set, using fallback");
       throw new Error("API key not set");
     }
 
-    const { text } = await generateTextWithRetries(prompt);
+    const { text } = await generateTextWithRetries(prompt, { modelCandidates: getTimeAnalysisModelCandidates() });
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
@@ -2596,99 +2341,52 @@ Only output valid JSON. No markdown code blocks.`;
 
     const parsed = safeJsonParse<any>(jsonMatch[0], "time analysis");
 
-    // Map the breakdown to include actual question IDs and validate time estimates
     const breakdown = (parsed.breakdown || []).map((item: any, idx: number) => {
       const estimatedMinutes = Number(item.estimatedMinutes);
-      let complexity = item.complexity || "moderate";
-      
-      // Validate complexity is one of the allowed values
-      if (!["simple", "moderate", "complex"].includes(complexity)) {
-        complexity = "moderate";
-      }
-      
-      // Enforce exact time values based on complexity (2.0, 2.5, or 3.0)
-      // Always use the standard time for the complexity level
-      const correctedTime = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES];
-      
+      const minutes = Number.isFinite(estimatedMinutes) && estimatedMinutes > 0 ? estimatedMinutes : DEFAULT_ESTIMATED_MINUTES;
       return {
         questionId: includedQuestions[idx]?.id || item.questionId,
-        questionText: item.questionText || includedQuestions[idx]?.question?.substring(0, 60) + "...",
-        estimatedMinutes: correctedTime,
-        complexity: complexity as "simple" | "moderate" | "complex",
-        reasoning: item.reasoning || "Standard interview question",
+        questionText: (item.questionText || includedQuestions[idx]?.question?.substring(0, 50) || "") + (includedQuestions[idx]?.question?.length > 50 ? "..." : ""),
+        estimatedMinutes: minutes,
+        reasoning: item.reasoning || "Estimated time for question",
       };
     });
 
-    // Server-side validation: count EXACTLY from the breakdown array using utility function
-    const counts = countByComplexity(breakdown);
-    const totalEstimatedMinutes = calculateTotalMinutes(counts);
+    const totalEstimatedMinutes = breakdown.length > 0
+      ? breakdown.reduce((sum: number, b: { estimatedMinutes: number }) => sum + b.estimatedMinutes, 0)
+      : Number(parsed.totalEstimatedMinutes) || 0;
     const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
-    
-    // Verify total questions match
-    const totalQuestionCount = counts.simple + counts.moderate + counts.complex;
-    if (totalQuestionCount !== includedQuestions.length) {
-      geminiLog.warn(`Question count mismatch: breakdown has ${totalQuestionCount}, expected ${includedQuestions.length}`);
-    }
-    
-    geminiLog.info(`AI time analysis (validated): ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
-    geminiLog.info(`Breakdown: ${counts.simple} simple × 2.0 + ${counts.moderate} moderate × 2.5 + ${counts.complex} complex × 3.0 = ${totalEstimatedMinutes.toFixed(1)} min`);
 
-    // Use utility functions for summary and recommendation
-    const accurateSummary = generateTimeSummary(counts, totalEstimatedMinutes);
-    const accurateRecommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
+    geminiLog.info(`AI time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min, withinBudget: ${withinBudget}`);
 
     return {
       totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
       breakdown,
-      summary: accurateSummary,
-      recommendation: accurateRecommendation,
-      withinBudget,
+      summary: parsed.summary || `Total estimated time: ${totalEstimatedMinutes.toFixed(1)} minutes for ${breakdown.length} questions.`,
+      recommendation: parsed.recommendation || (withinBudget ? "Within configured screening time." : "Consider reducing questions or increasing screening time."),
+      withinBudget: parsed.withinBudget !== undefined ? !!parsed.withinBudget : withinBudget,
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     geminiLog.error(`Time analysis error, using fallback: ${errorMessage}`);
-    
-    // Fallback: use AI-assigned complexity if available, otherwise classify
-    const breakdown = includedQuestions.map((q) => {
-      const qAny = q as ScreeningQuestion & { complexity?: string };
-      // Prefer AI-assigned complexity, fallback to deterministic classification
-      let complexity = qAny.complexity;
-      if (!complexity || !["simple", "moderate", "complex"].includes(complexity)) {
-        complexity = classifyQuestionComplexity(q.question);
-      }
-      const validComplexity = complexity as keyof typeof TIME_ESTIMATES;
-      const estimatedMinutes = TIME_ESTIMATES[validComplexity];
-      
-      const reasoningMap = {
-        simple: "Quick debugging/troubleshooting question (2.0 min)",
-        moderate: "Scenario-based question requiring analysis (2.5 min)",
-        complex: "Deep-dive architecture/optimization question (3.0 min)",
-      };
-      
-      return {
-        questionId: q.id,
-        questionText: q.question.substring(0, 60) + (q.question.length > 60 ? "..." : ""),
-        estimatedMinutes,
-        complexity: validComplexity,
-        reasoning: reasoningMap[validComplexity],
-      };
-    });
-    
-    const counts = countByComplexity(breakdown);
-    const totalEstimatedMinutes = calculateTotalMinutes(counts);
+
+    const defaultMinutesPerQuestion = DEFAULT_ESTIMATED_MINUTES;
+    const breakdown = includedQuestions.map((q) => ({
+      questionId: q.id,
+      questionText: q.question.substring(0, 50) + (q.question.length > 50 ? "..." : ""),
+      estimatedMinutes: defaultMinutesPerQuestion,
+      reasoning: "Fallback estimate (API unavailable)",
+    }));
+    const totalEstimatedMinutes = breakdown.length * defaultMinutesPerQuestion;
     const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
-    
-    // Use utility functions for summary and recommendation
-    const summary = generateTimeSummary(counts, totalEstimatedMinutes);
-    const recommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
-    
-    geminiLog.info(`Fallback time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min (${counts.simple}S + ${counts.moderate}M + ${counts.complex}C)`);
-    
+
+    geminiLog.info(`Fallback time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
+
     return {
       totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
       breakdown,
-      summary,
-      recommendation,
+      summary: `Fallback: ${breakdown.length} questions × ${defaultMinutesPerQuestion} min = ${totalEstimatedMinutes.toFixed(1)} minutes.`,
+      recommendation: withinBudget ? "Within configured screening time." : "Consider reducing questions or increasing screening time.",
       withinBudget,
     };
   }

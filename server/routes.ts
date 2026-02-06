@@ -168,7 +168,7 @@ export async function registerRoutes(
       const locationParts = [project.locationCity, project.locationState, project.locationCountry].filter(Boolean);
       const location = locationParts.length ? locationParts.join(", ") : undefined;
 
-      console.log("[generate-questions] Calling Gemini with JD length:", project.jdText.length, "screening minutes:", project.interviewDuration);
+      console.log("[generate-questions] Calling Gemini with JD length:", project.jdText.length, "screening minutes:", project.interviewDuration, "total minutes:", project.totalMinutes);
       const { competencies, questions, history } = await extractCompetenciesAndQuestions(
         project.jdText,
         project.smeNotesText || undefined,
@@ -177,7 +177,8 @@ export async function registerRoutes(
         location,
         project.interviewDuration || undefined,
         undefined, // existing questions
-        (project.aiChatHistoryJson || []) as any
+        (project.aiChatHistoryJson || []) as any,
+        project.totalMinutes ?? undefined
       );
       console.log("[generate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 
@@ -216,7 +217,8 @@ export async function registerRoutes(
         location,
         project.interviewDuration || undefined,
         existingQuestions,
-        (project.aiChatHistoryJson || []) as any
+        (project.aiChatHistoryJson || []) as any,
+        project.totalMinutes ?? undefined
       );
       console.log("[regenerate-questions] Got competencies:", competencies.length, "questions:", questions.length);
 

@@ -135,7 +135,6 @@ export default function QuestionsSetupPage() {
       questionId: string;
       questionText: string;
       estimatedMinutes: number;
-      complexity: "simple" | "moderate" | "complex";
       reasoning: string;
     }>;
     summary: string;
@@ -187,20 +186,19 @@ export default function QuestionsSetupPage() {
     },
     onError: (error) => {
       console.error("[analyzeTime] Error:", error);
-      // Fallback to real-time calculation based on pre-assigned complexity
-      const estimate = calculateRealTimeEstimate();
+      const included = questions.filter(q => q.isMandatory);
+      const fallbackTotal = included.reduce((sum, q) => sum + ((q as any).estimatedMinutes ?? 2.5), 0);
       setTimeAnalysis({
-        totalEstimatedMinutes: estimate.total,
-        breakdown: questions.filter(q => q.isMandatory).map(q => ({
+        totalEstimatedMinutes: fallbackTotal,
+        breakdown: included.map(q => ({
           questionId: q.id,
-          questionText: q.question.substring(0, 60) + "...",
-          estimatedMinutes: TIME_ESTIMATES[((q as any).complexity || "moderate") as keyof typeof TIME_ESTIMATES] || 2.5,
-          complexity: (q as any).complexity || "moderate",
-          reasoning: "Based on AI-assigned complexity",
+          questionText: q.question.substring(0, 50) + (q.question.length > 50 ? "..." : ""),
+          estimatedMinutes: (q as any).estimatedMinutes ?? 2.5,
+          reasoning: "Fallback estimate",
         })),
-        summary: `The screening consists of ${estimate.counts.simple} simple, ${estimate.counts.moderate} moderate, and ${estimate.counts.complex} complex questions, totaling ${estimate.total} minutes of pure Q&A time.`,
-        recommendation: "Using pre-assigned complexity from question generation.",
-        withinBudget: estimate.total <= configuredScreeningTime,
+        summary: `Fallback: ${included.length} questions, totaling ${fallbackTotal.toFixed(1)} minutes. Time analysis API unavailable.`,
+        recommendation: "Time analysis API unavailable; using question estimates.",
+        withinBudget: fallbackTotal <= configuredScreeningTime,
       });
     },
   });
@@ -771,7 +769,7 @@ export default function QuestionsSetupPage() {
         ) : (step === "review" || isLocked) ? (
           <div className="grid gap-12 pb-20 max-w-4xl mx-auto">
             {[
-              { sectionTitle: "Included in interview", sectionSubtitle: `${includedCount} question(s) • ${estimatedMinutes} min est.${configuredScreeningTime > 0 ? ` / ${configuredScreeningTime} min budget` : ""}`, grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
+              { sectionTitle: "Included in interview", sectionSubtitle: "", grouped: groupedIncluded, icon: CheckCircle, iconClass: "text-green-600" },
               { sectionTitle: "Not included", sectionSubtitle: `${notIncludedCount} question(s)`, grouped: groupedNotIncluded, icon: AlertCircle, iconClass: "text-muted-foreground" },
             ].map(({ sectionTitle, sectionSubtitle, grouped, icon: SectionIcon, iconClass }) => {
               return (
@@ -782,7 +780,7 @@ export default function QuestionsSetupPage() {
                     </div>
                     <div className="flex flex-col">
                       <h2 className="text-xl font-black tracking-tight text-foreground/90 leading-none">{sectionTitle}</h2>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mt-1">{sectionSubtitle}</p>
+                      {sectionSubtitle ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mt-1">{sectionSubtitle}</p> : null}
                     </div>
                     <div className="flex-1 h-[1px] bg-gradient-to-r from-border/80 to-transparent ml-4" />
                   </div>
@@ -1146,19 +1144,6 @@ export default function QuestionsSetupPage() {
                                               )}
                                               placeholder="Enter question text..."
                                             />
-                                            {/* Complexity badge */}
-                                            {(question as any).complexity && (
-                                              <div className="flex items-center gap-2 mt-2">
-                                                <span className={cn(
-                                                  "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                                                  (question as any).complexity === "simple" ? "bg-green-500/10 text-green-600" :
-                                                  (question as any).complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
-                                                  "bg-blue-500/10 text-blue-600"
-                                                )}>
-                                                  {(question as any).complexity} • {TIME_ESTIMATES[((question as any).complexity) as keyof typeof TIME_ESTIMATES] || 2.5}m
-                                                </span>
-                                              </div>
-                                            )}
                                           </div>
                                           {!isPreviewMode && (
                                             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1434,19 +1419,27 @@ export default function QuestionsSetupPage() {
                   </div>
                 ) : (
                   (() => {
-                    // ALWAYS use real-time calculation for accurate, dynamic values
-                    const currentEstimate = calculateRealTimeEstimate();
-                    const currentMinutes = currentEstimate.total;
-                    const currentCounts = currentEstimate.counts;
-                    const isWithinBudget = configuredScreeningTime === 0 || currentMinutes <= configuredScreeningTime;
+                    // Use Gemini time analysis when available; otherwise fallback (no difficulty labels)
+                    const fallbackMinutes = questions.filter(q => q.isMandatory).reduce((sum, q) => sum + ((q as any).estimatedMinutes ?? 2.5), 0);
+                    const currentMinutes = timeAnalysis?.totalEstimatedMinutes ?? fallbackMinutes;
+                    const isWithinBudget = timeAnalysis?.withinBudget ?? (configuredScreeningTime === 0 || currentMinutes <= configuredScreeningTime);
                     const overBudgetBy = Math.max(0, currentMinutes - configuredScreeningTime);
-                    
-                    // Generate dynamic summary from current selection
-                    const dynamicSummary = `The screening consists of ${currentCounts.simple} simple, ${currentCounts.moderate} moderate, and ${currentCounts.complex} complex questions, totaling ${currentMinutes} minutes of pure Q&A time. This calculation strictly covers the question-and-answer period and excludes introductions, follow-up probes, or closing remarks.`;
-                    
+                    const summaryText = timeAnalysis?.summary ?? `The screening consists of ${includedQuestionsCount} questions, totaling ${currentMinutes.toFixed(1)} minutes of pure Q&A time. This calculation strictly covers the question-and-answer period and excludes introductions, follow-up probes, or closing remarks.`;
+                    const recommendationText = timeAnalysis?.recommendation ?? (configuredScreeningTime === 0
+                      ? `Your interview will take approximately ${currentMinutes.toFixed(1)} minutes for the Q&A portion.`
+                      : isWithinBudget
+                        ? `At ${currentMinutes.toFixed(1)} minutes, you are within your ${configuredScreeningTime}-minute Q&A budget with ${(configuredScreeningTime - currentMinutes).toFixed(1)} minutes remaining. The timing is well-optimized.`
+                        : `At ${currentMinutes.toFixed(1)} minutes, you exceed your ${configuredScreeningTime}-minute Q&A budget by ${overBudgetBy.toFixed(1)} minutes. Consider removing questions to fit within budget.`);
+                    const breakdown = timeAnalysis?.breakdown ?? questions.filter(q => q.isMandatory).map((q, idx) => ({
+                      questionId: q.id,
+                      questionText: q.question.substring(0, 50) + (q.question.length > 50 ? "..." : ""),
+                      estimatedMinutes: (q as any).estimatedMinutes ?? 2.5,
+                      reasoning: "Estimated time for question",
+                    }));
+
                     return (
                       <>
-                        {/* Time Summary - ALWAYS uses real-time calculation */}
+                        {/* Time Summary - from Gemini when available */}
                         <div className={cn(
                           "flex items-center gap-3 p-4 rounded-xl border",
                           isWithinBudget 
@@ -1456,7 +1449,7 @@ export default function QuestionsSetupPage() {
                           <Clock className={cn("w-6 h-6", isWithinBudget ? "text-green-600" : "text-amber-600")} />
                           <div className="flex-1">
                             <p className="font-bold text-foreground text-lg">
-                              {currentMinutes} min estimated
+                              {typeof currentMinutes === "number" ? currentMinutes.toFixed(1) : currentMinutes} min estimated
                             </p>
                             <p className="text-sm text-muted-foreground">
                               for {includedQuestionsCount} included questions
@@ -1475,54 +1468,38 @@ export default function QuestionsSetupPage() {
                           </div>
                         </div>
 
-                        {/* Dynamic Summary - ALWAYS uses real-time calculation */}
+                        {/* Summary - no simple/moderate/complex */}
                         <div className="p-3 rounded-xl bg-muted/30 border border-border/40">
-                          <p className="text-sm text-foreground font-medium">{dynamicSummary}</p>
+                          <p className="text-sm text-foreground font-medium">{summaryText}</p>
                         </div>
 
-                        {/* Question Breakdown (collapsible) - Uses current questions */}
-                        {includedQuestionsCount > 0 && (
+                        {/* Question breakdown - no difficulty labels */}
+                        {breakdown.length > 0 && (
                           <details className="group">
                             <summary className="text-xs font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-2">
                               <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
                               View breakdown by question
                             </summary>
                             <div className="mt-3 space-y-2 max-h-[200px] overflow-y-auto">
-                              {questions.filter(q => q.isMandatory).map((q, idx) => {
-                                const complexity = (q as any).complexity || "moderate";
-                                const minutes = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES] || 2.5;
-                                return (
-                                  <div key={q.id} className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-border/20 text-xs">
-                                    <span className={cn(
-                                      "shrink-0 px-1.5 py-0.5 rounded font-bold uppercase",
-                                      complexity === "simple" ? "bg-green-500/10 text-green-600" :
-                                      complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
-                                      "bg-blue-500/10 text-blue-600"
-                                    )}>
-                                      {minutes}m
-                                    </span>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-foreground/80 truncate">{q.question.substring(0, 60)}...</p>
-                                      <p className="text-muted-foreground text-[10px] mt-0.5">{complexity} complexity</p>
-                                    </div>
+                              {breakdown.map((b: { questionId?: string; questionText?: string; estimatedMinutes?: number; reasoning?: string }, idx: number) => (
+                                <div key={b.questionId ?? idx} className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-border/20 text-xs">
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded font-bold bg-muted/60 text-foreground">
+                                    {typeof b.estimatedMinutes === "number" ? b.estimatedMinutes : 2.5}m
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-foreground/80 truncate">{b.questionText ?? ""}</p>
+                                    {b.reasoning ? <p className="text-muted-foreground text-[10px] mt-0.5">{b.reasoning}</p> : null}
                                   </div>
-                                );
-                              })}
+                                </div>
+                              ))}
                             </div>
                           </details>
                         )}
 
-                        {/* Dynamic AI Recommendation */}
+                        {/* AI Recommendation - from Gemini when available */}
                         <div className="p-3 rounded-xl bg-primary/5 border border-primary/10">
                           <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">AI Recommendation</p>
-                          <p className="text-sm text-foreground">
-                            {configuredScreeningTime === 0
-                              ? `Your interview will take approximately ${currentMinutes} minutes for the Q&A portion.`
-                              : isWithinBudget
-                                ? `At ${currentMinutes} minutes, you are within your ${configuredScreeningTime}-minute Q&A budget with ${(configuredScreeningTime - currentMinutes).toFixed(1)} minutes remaining. The timing is well-optimized.`
-                                : `At ${currentMinutes} minutes, you exceed your ${configuredScreeningTime}-minute Q&A budget by ${overBudgetBy.toFixed(1)} minutes. Consider removing ${Math.ceil(overBudgetBy / 2.5)} questions to fit within budget.`
-                            }
-                          </p>
+                          <p className="text-sm text-foreground">{recommendationText}</p>
                         </div>
                       </>
                     );

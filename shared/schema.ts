@@ -8,6 +8,9 @@ export * from "./models/auth";
 // Re-export chat models
 export * from "./models/chat";
 
+// Screening time bands (question count by duration)
+export * from "./screening-bands";
+
 // =====================
 // Projects Table
 // =====================
