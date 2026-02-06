@@ -146,10 +146,14 @@ export default function QuestionsSetupPage() {
   const initialStepSet = useRef(false);
   const stageSaved = useRef(false);
   
-  // Time estimates per complexity level (must match server TIME_ESTIMATES)
-  const TIME_ESTIMATES = { simple: 2.0, moderate: 2.5, complex: 3.0 };
+  const FALLBACK_ESTIMATES = { simple: 2.0, moderate: 2.5, complex: 3.0 };
   
-  // Real-time calculation based on pre-assigned complexity from AI
+  const getQuestionMinutes = (q: any): number => {
+    if (typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0) return q.estimatedMinutes;
+    const complexity = q.complexity || "moderate";
+    return FALLBACK_ESTIMATES[complexity as keyof typeof FALLBACK_ESTIMATES] || 2.5;
+  };
+
   const calculateRealTimeEstimate = () => {
     const included = questions.filter(q => q.isMandatory);
     if (included.length === 0) return { total: 0, counts: { simple: 0, moderate: 0, complex: 0 } };
@@ -158,15 +162,14 @@ export default function QuestionsSetupPage() {
     let total = 0;
     
     for (const q of included) {
-      // Use AI-assigned complexity if available, otherwise default to moderate
       const complexity = (q as any).complexity || "moderate";
       const validComplexity = ["simple", "moderate", "complex"].includes(complexity) ? complexity : "moderate";
       counts[validComplexity as keyof typeof counts]++;
-      total += TIME_ESTIMATES[validComplexity as keyof typeof TIME_ESTIMATES];
+      total += getQuestionMinutes(q);
     }
     
     const result = { total: Math.round(total * 10) / 10, counts };
-    console.log(`[TimeEstimate] ${included.length} included questions: ${counts.simple}S + ${counts.moderate}M + ${counts.complex}C = ${result.total} min`);
+    console.log(`[TimeEstimate] ${included.length} included questions: ${result.total} min (using AI estimates)`);
     return result;
   };
   
@@ -194,9 +197,9 @@ export default function QuestionsSetupPage() {
         breakdown: questions.filter(q => q.isMandatory).map(q => ({
           questionId: q.id,
           questionText: q.question.substring(0, 60) + "...",
-          estimatedMinutes: TIME_ESTIMATES[((q as any).complexity || "moderate") as keyof typeof TIME_ESTIMATES] || 2.5,
+          estimatedMinutes: getQuestionMinutes(q),
           complexity: (q as any).complexity || "moderate",
-          reasoning: "Based on AI-assigned complexity",
+          reasoning: "Based on AI-estimated time",
         })),
         summary: `The screening consists of ${estimate.counts.simple} simple, ${estimate.counts.moderate} moderate, and ${estimate.counts.complex} complex questions, totaling ${estimate.total} minutes of pure Q&A time.`,
         recommendation: "Using pre-assigned complexity from question generation.",
@@ -1155,7 +1158,7 @@ export default function QuestionsSetupPage() {
                                                   (question as any).complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
                                                   "bg-blue-500/10 text-blue-600"
                                                 )}>
-                                                  {(question as any).complexity} • {TIME_ESTIMATES[((question as any).complexity) as keyof typeof TIME_ESTIMATES] || 2.5}m
+                                                  {(question as any).complexity} • {getQuestionMinutes(question)}m
                                                 </span>
                                               </div>
                                             )}
@@ -1490,7 +1493,7 @@ export default function QuestionsSetupPage() {
                             <div className="mt-3 space-y-2 max-h-[200px] overflow-y-auto">
                               {questions.filter(q => q.isMandatory).map((q, idx) => {
                                 const complexity = (q as any).complexity || "moderate";
-                                const minutes = TIME_ESTIMATES[complexity as keyof typeof TIME_ESTIMATES] || 2.5;
+                                const minutes = getQuestionMinutes(q);
                                 return (
                                   <div key={q.id} className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-border/20 text-xs">
                                     <span className={cn(
@@ -1520,7 +1523,7 @@ export default function QuestionsSetupPage() {
                               ? `Your interview will take approximately ${currentMinutes} minutes for the Q&A portion.`
                               : isWithinBudget
                                 ? `At ${currentMinutes} minutes, you are within your ${configuredScreeningTime}-minute Q&A budget with ${(configuredScreeningTime - currentMinutes).toFixed(1)} minutes remaining. The timing is well-optimized.`
-                                : `At ${currentMinutes} minutes, you exceed your ${configuredScreeningTime}-minute Q&A budget by ${overBudgetBy.toFixed(1)} minutes. Consider removing ${Math.ceil(overBudgetBy / 2.5)} questions to fit within budget.`
+                                : `At ${currentMinutes} minutes, you exceed your ${configuredScreeningTime}-minute Q&A budget by ${overBudgetBy.toFixed(1)} minutes. Consider removing or shortening some questions to fit within budget.`
                             }
                           </p>
                         </div>
