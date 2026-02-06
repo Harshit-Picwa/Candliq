@@ -345,6 +345,25 @@ export async function registerRoutes(
       
       const analysis = await analyzeQuestionTime(questions, competencies, configuredScreeningTime);
       
+      const updatedQuestions = questions.map(q => {
+        const analyzed = analysis.breakdown.find(b => b.questionId === q.id);
+        if (analyzed && typeof analyzed.estimatedMinutes === "number") {
+          return { ...q, estimatedMinutes: analyzed.estimatedMinutes };
+        }
+        return q;
+      });
+      
+      const questionsChanged = updatedQuestions.some((q, i) => 
+        (q as any).estimatedMinutes !== (questions[i] as any).estimatedMinutes
+      );
+      
+      if (questionsChanged) {
+        await storage.updateProject(parseInt(req.params.id), {
+          screeningQuestionsJson: updatedQuestions,
+        } as any);
+        console.log(`[analyze-time] Updated stored question estimates to match Gemini analysis`);
+      }
+      
       res.json(analysis);
     } catch (error: any) {
       console.error("[analyze-time] Error:", error?.message || error);

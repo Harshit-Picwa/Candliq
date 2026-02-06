@@ -187,6 +187,16 @@ export default function QuestionsSetupPage() {
     },
     onSuccess: (data) => {
       setTimeAnalysis(data as any);
+      if (data.breakdown && Array.isArray(data.breakdown)) {
+        setQuestions(prev => prev.map(q => {
+          const analyzed = data.breakdown.find((b: any) => b.questionId === q.id);
+          if (analyzed && typeof analyzed.estimatedMinutes === "number") {
+            return { ...q, estimatedMinutes: analyzed.estimatedMinutes };
+          }
+          return q;
+        }));
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', id] });
     },
     onError: (error) => {
       console.error("[analyzeTime] Error:", error);

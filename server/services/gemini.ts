@@ -2024,40 +2024,7 @@ export async function analyzeQuestionTime(
     };
   }
 
-  const allHaveEstimates = includedQuestions.every((q: any) => 
-    typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0
-  );
-  
-  if (allHaveEstimates) {
-    geminiLog.info("Using AI-estimated times from question generation (no additional AI call needed)");
-    
-    const breakdown = includedQuestions.map((q) => {
-      return {
-        questionId: q.id,
-        questionText: q.question.substring(0, 60) + (q.question.length > 60 ? "..." : ""),
-        estimatedMinutes: q.estimatedMinutes || 2.5,
-        reasoning: `AI-estimated during question generation: ${(q.estimatedMinutes || 2.5).toFixed(1)} min`,
-      };
-    });
-    
-    const totalEstimatedMinutes = breakdown.reduce((sum, b) => sum + b.estimatedMinutes, 0);
-    const withinBudget = totalEstimatedMinutes <= configuredScreeningTime;
-    
-    const summary = generateTimeSummary(includedQuestions.length, totalEstimatedMinutes);
-    const recommendation = generateTimeRecommendation(totalEstimatedMinutes, configuredScreeningTime);
-    
-    geminiLog.info(`Time analysis: ${totalEstimatedMinutes.toFixed(1)}/${configuredScreeningTime} min`);
-    
-    return {
-      totalEstimatedMinutes: Math.round(totalEstimatedMinutes * 10) / 10,
-      breakdown,
-      summary,
-      recommendation,
-      withinBudget,
-    };
-  }
-  
-  geminiLog.info("Questions don't have time estimates, asking AI to analyze");
+  geminiLog.info("Calling Gemini for independent time analysis (ignoring stored estimates)");
   
   const questionsText = includedQuestions.map((q: any, i) => {
     const comp = competencies.find(c => c.id === q.competencyId);

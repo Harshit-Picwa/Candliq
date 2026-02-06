@@ -1,0 +1,50 @@
+{
+"totalEstimatedMinutes": 34,
+"breakdown": [
+{
+"questionId": "1",
+"questionText": "Describe a specific time you had to debug a critic...",
+"estimatedMinutes": 6,
+"reasoning": "0.5 min to ask; 5.5 min for a complex 'Situation-Task-Action-Result' (STAR) story involving debugging tools and root cause analysis."
+},
+{
+"questionId": "2",
+"questionText": "In a microservices architecture, Service A calls S...",
+"estimatedMinutes": 5,
+"reasoning": "0.5 min to ask; 4.5 min to explain the 'check-then-act' logic, retry policies (exponential backoff), and a real-world example."
+},
+{
+"questionId": "3",
+"questionText": "Tell me about a specific time you had to optimize...",
+"estimatedMinutes": 5,
+"reasoning": "0.5 min to ask; 4.5 min to detail the discovery process (slow logs, EXPLAIN) and the specific database tuning or schema change."
+},
+{
+"questionId": "4",
+"questionText": "A backend service is getting slow due to high data...",
+"estimatedMinutes": 4,
+"reasoning": "0.5 min to ask; 3.5 min to describe the caching strategy (e.g., Write-Through vs. LRU) and justify the specific data selection."
+},
+{
+"questionId": "5",
+"questionText": "Your team uses Docker for all backend services. Wa...",
+"estimatedMinutes": 4,
+"reasoning": "0.5 min to ask; 3.5 min to list key Dockerfile instructions (FROM, RUN, CMD) and explain multi-stage builds."
+},
+{
+"questionId": "6",
+"questionText": "Can you describe a CI/CD pipeline you have persona...",
+"estimatedMinutes": 4,
+"reasoning": "0.5 min to ask; 3.5 min to walk through the pipeline stages (Lint, Test, Build, Deploy) and tools used."
+},
+{
+"questionId": "7",
+"questionText": "Tell me about a specific time you had to solve a c...",
+"estimatedMinutes": 6,
+"reasoning": "0.5 min to ask; 5.5 min to explain the race condition symptoms, the debugging process, and the synchronization primitives used to fix it."
+}
+],
+"summary": "The total estimated time is 34 minutes. This list contains 7 questions, several of which are deep behavioral/technical 'STAR' questions that require significant storytelling time.",
+"recommendation": "This exceeds a 15-minute budget by more than double. For a 15-minute screen, you must select exactly 2 of these questions (e.g., #1 and #5).",
+"withinBudget": false
+}
