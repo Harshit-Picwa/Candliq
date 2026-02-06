@@ -910,12 +910,13 @@ The objective from this is so that the hiring manager can save time of the subje
 IMPORTANT GUIDELINES:
 1. The TOTAL time for ALL main (mandatory) questions must fit within ${screeningTime} minutes including asking time, candidate thinking time, and answering time.
 2. For each question, estimate the realistic time in minutes it would take (asking + thinking + answering). Do NOT use fixed/hardcoded values - estimate based on the actual question complexity and scope.
-3. Extract 3-5 key competencies directly from the JD.
-4. Every question must reference SPECIFIC technologies, tools, or responsibilities from the JD.
-5. Questions must test PRACTICAL EXPERIENCE, not theoretical knowledge.
-6. Include exactly 5 signals each for goodSignals, moderateSignals, and poorSignals in each rubric.
-7. NO culture-fit, soft-skills, or reverse questions. Focus exclusively on technical/domain competency.
-8. Each question must be unique and non-repetitive.
+3. MAXIMIZE QUESTION COUNT: Aim to generate as many mandatory questions as possible that fit within the ${screeningTime}-minute budget. Keep individual questions focused and concise — target 3-4 minutes per question rather than 6-7 minute questions. Ask about ONE specific skill or scenario per question, not multiple topics combined. A ${screeningTime}-minute budget should fit approximately ${Math.floor(screeningTime / 3.5)} mandatory questions.
+4. Extract 3-5 key competencies directly from the JD.
+5. Every question must reference SPECIFIC technologies, tools, or responsibilities from the JD.
+6. Questions must test PRACTICAL EXPERIENCE, not theoretical knowledge.
+7. Include exactly 5 signals each for goodSignals, moderateSignals, and poorSignals in each rubric.
+8. NO culture-fit, soft-skills, or reverse questions. Focus exclusively on technical/domain competency.
+9. Each question must be unique and non-repetitive.
 
 For each question provide:
 - A clear, scenario-based question tied to the JD
@@ -1282,8 +1283,9 @@ REQUIREMENTS:
 1. Extract 3-5 key competencies from the JD
 2. Generate exactly ${questionsNeeded} scenario-based questions
 3. For EACH question, estimate realistic time in minutes (asking + thinking + answering). Do NOT use fixed values - estimate based on actual question complexity and scope.
-4. Include detailed rubrics with exactly 5 signals each (goodSignals, moderateSignals, poorSignals)
-5. The TOTAL time for all mandatory questions must fit within ${screeningTime} minutes.
+4. KEEP QUESTIONS FOCUSED AND CONCISE: Target 3-4 minutes per question. Ask about ONE specific skill or scenario per question, not multiple topics combined. This maximizes coverage across competencies.
+5. Include detailed rubrics with exactly 5 signals each (goodSignals, moderateSignals, poorSignals)
+6. The TOTAL time for all mandatory questions must fit within ${screeningTime} minutes.
 
 Respond with JSON:
 {
@@ -1336,7 +1338,8 @@ REQUIREMENTS:
 1. Generate exactly ${questionsNeeded} NEW unique questions
 2. Distribute across the existing competencies
 3. For EACH question, estimate realistic time in minutes (asking + thinking + answering). Do NOT use fixed values.
-4. Include detailed rubrics with exactly 5 signals each
+4. KEEP QUESTIONS FOCUSED AND CONCISE: Target 3-4 minutes per question. Ask about ONE specific skill or scenario per question, not multiple topics combined.
+5. Include detailed rubrics with exactly 5 signals each
 
 Respond with JSON (NO competencies array, only questions):
 {
