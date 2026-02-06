@@ -193,7 +193,7 @@ export default function ProjectSetupPage() {
       toast({
         title: "Complete required fields",
         description:
-          "Please fill in all Campaign Settings: Role Title, Total Interview Time, Screening Time, Company Website, and Location.",
+          "Please complete all fields: Role Title, Total Interview Time, Screening Q&A Time, Company Website, and Location.",
         variant: "destructive",
       });
       return;
@@ -317,7 +317,7 @@ export default function ProjectSetupPage() {
     if (isCampaignSettingsIncomplete) {
       toast({
         title: "Complete required fields",
-        description: "Please fill in all Campaign Settings: Role Title, Total Interview Time, Screening Time, Company Website, and Location.",
+        description: "Please complete all fields: Role Title, Total Interview Time, Screening Q&A Time, Company Website, and Location.",
         variant: "destructive",
       });
       return;
@@ -325,7 +325,7 @@ export default function ProjectSetupPage() {
     if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid duration",
-        description: "Only move forward if screening time is less than or equal to interview time.",
+        description: "Screening Q&A time must be less than or equal to total interview time.",
         variant: "destructive",
       });
       return;
@@ -342,7 +342,7 @@ export default function ProjectSetupPage() {
     if (isCampaignSettingsIncomplete) {
       toast({
         title: "Complete required fields",
-        description: "Please fill in all Campaign Settings before saving.",
+        description: "Please complete all fields in Interview Setup before saving.",
         variant: "destructive",
       });
       return;
@@ -350,7 +350,7 @@ export default function ProjectSetupPage() {
     if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid Duration",
-        description: "Only move forward if screening time is less than or equal to interview time.",
+        description: "Screening Q&A time must be less than or equal to total interview time.",
         variant: "destructive",
       });
       return;
@@ -374,7 +374,7 @@ export default function ProjectSetupPage() {
     if (isTotalInterviewTimeMissing) {
       toast({
         title: "Total Interview Time required",
-        description: "Please enter the total interview time (minutes) in Campaign Settings first.",
+        description: "Please enter the total interview time (minutes) in Interview Setup first.",
         variant: "destructive",
       });
       return;
@@ -396,7 +396,7 @@ export default function ProjectSetupPage() {
 
     if (smeNotes.trim().length > 0 && smeNotes.trim().length < MIN_SME_LENGTH) {
       toast({
-        title: "SME notes too short",
+        title: "Expert guidance too short",
         description: `Please provide at least ${MIN_SME_LENGTH} characters for your instructions, or leave them blank if you don't have specific requirements.`,
         variant: "destructive"
       });
@@ -407,7 +407,7 @@ export default function ProjectSetupPage() {
     if (isScreeningExceedsInterview) {
       toast({
         title: "Invalid Duration",
-        description: "Only move forward if screening time is less than or equal to interview time.",
+        description: "Screening Q&A time must be less than or equal to total interview time.",
         variant: "destructive",
       });
       return;
@@ -461,7 +461,7 @@ export default function ProjectSetupPage() {
       project={project}
       isLoading={isLoading}
       currentStage={1}
-      stageDescription={isPreviewMode ? "Preview Mode - Review project details" : "Stage 1: Enter JD and SME notes, then generate questions"}
+      stageDescription={isPreviewMode ? "Preview Mode - Review project details" : "Tell us about the role and we'll generate expert-level screening questions for you"}
       onStageClick={(stage) => {
         if (stage === 2 && hasExistingQuestions) navigate(`/projects/${id}/questions${isPreviewMode ? '?preview=true' : ''}`);
       }}
@@ -499,9 +499,9 @@ export default function ProjectSetupPage() {
       subNavigation={
         <div className="relative flex items-center w-full max-w-2xl bg-muted/30 backdrop-blur-xl p-1.5 rounded-[1.25rem] border border-border/40 shadow-xl shadow-black/5 ring-1 ring-white/10">
           {[
-            { stepId: 1 as const, label: "Campaign", icon: Settings },
-            { stepId: 2 as const, label: "JD Setup", icon: FileText },
-            { stepId: 3 as const, label: "SME Notes", icon: Brain },
+            { stepId: 1 as const, label: "Interview Setup", icon: Settings },
+            { stepId: 2 as const, label: "Job Description", icon: FileText },
+            { stepId: 3 as const, label: "Expert Guidance", icon: Brain },
           ].map(({ stepId, label, icon: Icon }, i) => (
             <div key={stepId} className="flex-1 relative">
               <button
@@ -564,9 +564,9 @@ export default function ProjectSetupPage() {
                 <Settings className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-3xl font-black tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">Campaign Settings</CardTitle>
+                <CardTitle className="text-3xl font-black tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">Interview Setup</CardTitle>
                 <CardDescription className="text-sm font-bold uppercase tracking-[0.1em] text-primary/60 mt-0.5">
-                  Core Project Metadata
+                  Step 1 of 3
                 </CardDescription>
               </div>
             </div>
@@ -620,7 +620,9 @@ export default function ProjectSetupPage() {
                     }}
                     placeholder="e.g. 45"
                     className={cn("h-14 text-lg font-semibold rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isTotalInterviewTimeMissing && "border-destructive/70 ring-1 ring-destructive/20", isPreviewMode && "cursor-not-allowed opacity-70")}
+                    data-testid="input-total-minutes"
                   />
+                  <p className="text-xs text-muted-foreground ml-1">The full interview length, including introductions, Q&A, and wrap-up.</p>
                   {triedToAdvance && isTotalInterviewTimeMissing && (
                     <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
                       <Info className="w-3.5 h-3.5" />
@@ -632,7 +634,7 @@ export default function ProjectSetupPage() {
                 <div className="space-y-3">
                   <Label htmlFor="interview-duration" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
                     <Clock className="w-3 h-3" />
-                    Total Screening Time (min)
+                    Screening Q&A Time (min)
                     <span className="text-destructive">*</span>
                   </Label>
                   <Input
@@ -657,7 +659,9 @@ export default function ProjectSetupPage() {
                       isScreeningExceedsInterview && "border-destructive ring-1 ring-destructive/30",
                       isPreviewMode && "cursor-not-allowed opacity-70"
                     )}
+                    data-testid="input-screening-time"
                   />
+                  <p className="text-xs text-muted-foreground ml-1">Time dedicated just to asking screening questions. AI will fit the right number of questions here.</p>
                   {triedToAdvance && isScreeningTimeMissing && (
                     <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
                       <Info className="w-3.5 h-3.5" />
@@ -667,11 +671,40 @@ export default function ProjectSetupPage() {
                   {isScreeningExceedsInterview && (
                     <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
                       <Info className="w-3.5 h-3.5" />
-                      Only move forward if screening time is less than or equal to interview time.
+                      Screening time must be less than or equal to total interview time.
                     </p>
                   )}
                 </div>
               </div>
+
+              {typeof totalMinutes === "number" && totalMinutes > 0 && typeof interviewDuration === "number" && interviewDuration > 0 && !isScreeningExceedsInterview && (
+                <div className="p-5 rounded-2xl bg-primary/[0.03] border border-primary/10">
+                  <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 mb-3 flex items-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    Your Interview Breakdown
+                  </p>
+                  <div className="flex items-center gap-2 h-8 rounded-xl overflow-hidden">
+                    <div
+                      className="h-full bg-muted/60 rounded-l-lg flex items-center justify-center px-3 text-[10px] font-bold text-muted-foreground whitespace-nowrap"
+                      style={{ width: `${Math.max(15, (5 / totalMinutes) * 100)}%` }}
+                    >
+                      Intro
+                    </div>
+                    <div
+                      className="h-full bg-primary/20 flex items-center justify-center px-3 text-[10px] font-bold text-primary whitespace-nowrap"
+                      style={{ width: `${Math.max(20, (interviewDuration / totalMinutes) * 100)}%` }}
+                    >
+                      Screening ({interviewDuration} min)
+                    </div>
+                    <div
+                      className="h-full bg-muted/60 rounded-r-lg flex items-center justify-center px-3 text-[10px] font-bold text-muted-foreground whitespace-nowrap flex-1"
+                    >
+                      Follow-ups & Wrap-up ({totalMinutes - interviewDuration} min)
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">AI will generate precise questions that fit within your {interviewDuration}-minute screening window.</p>
+                </div>
+              )}
 
               <div className="space-y-3">
                 <Label htmlFor="company-website" className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1 flex items-center gap-2">
@@ -688,7 +721,9 @@ export default function ProjectSetupPage() {
                   onChange={(e) => setCompanyWebsite(e.target.value)}
                   placeholder="https://company.com"
                   className={cn("h-14 text-base font-medium rounded-2xl border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all px-5", triedToAdvance && isCompanyWebsiteMissing && "border-destructive/70 ring-1 ring-destructive/20", isPreviewMode && "cursor-not-allowed opacity-70")}
+                  data-testid="input-company-website"
                 />
+                <p className="text-xs text-muted-foreground ml-1">Helps AI tailor questions to your company's industry and context.</p>
                 {triedToAdvance && isCompanyWebsiteMissing && (
                   <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
                     <Info className="w-3.5 h-3.5" />
@@ -711,6 +746,7 @@ export default function ProjectSetupPage() {
                   disabled={isPreviewMode}
                   className={triedToAdvance && isLocationMissing ? "border-destructive/70 ring-1 ring-destructive/20" : undefined}
                 />
+                <p className="text-xs text-muted-foreground ml-1">Where the role is based. AI uses this for location-relevant questions.</p>
                 {triedToAdvance && isLocationMissing && (
                   <p className="text-sm text-destructive font-medium flex items-center gap-1.5 ml-1" role="alert">
                     <Info className="w-3.5 h-3.5" />
@@ -779,7 +815,7 @@ export default function ProjectSetupPage() {
               )}
             </div>
             <CardDescription className="text-base font-medium ml-13 mt-2">
-              Paste the job description (text only). Our AI will generate screening questions and grading rubrics.
+              Paste the job description below. Our AI will analyze the requirements and create targeted screening questions with grading rubrics so you can evaluate candidates like an expert.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-10 pt-0 space-y-6">
@@ -835,7 +871,7 @@ export default function ProjectSetupPage() {
                     className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
                     disabled={!jdText.trim()}
                   >
-                    Next: SME Notes
+                    Next: Expert Guidance
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 )}
@@ -852,18 +888,45 @@ export default function ProjectSetupPage() {
               <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Brain className="w-5 h-5 text-primary" />
               </div>
-              <CardTitle className="text-2xl font-black tracking-tight">Subject Matter Expert Notes</CardTitle>
+              <CardTitle className="text-2xl font-black tracking-tight">Expert Guidance</CardTitle>
             </div>
             <CardDescription className="text-base font-medium ml-13">
-              Add SME expectations (e.g. Head of Tech, Head of Marketing) so the AI generates questions and rubrics that match.
+              What does the hiring team or department head care about most? These notes help AI ask the right questions even if you're not the technical expert.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-10 pt-0 space-y-8">
+            {!isPreviewMode && (
+              <div className="space-y-3">
+                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Quick Templates (click to add)</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: "Leadership focus", text: "The hiring manager wants someone who can lead a team, mentor junior members, and make independent decisions. Focus on leadership and decision-making." },
+                    { label: "Hands-on builder", text: "We need a hands-on person who can build and ship quickly. Focus on practical experience, problem-solving, and ability to deliver under deadlines." },
+                    { label: "Culture fit", text: "Team collaboration is critical. Focus on communication skills, working across departments, and adapting to a fast-paced environment." },
+                    { label: "Domain expertise", text: "Deep industry knowledge is essential. Focus on specific domain experience, relevant certifications, and understanding of industry best practices." },
+                  ].map((template) => (
+                    <Badge
+                      key={template.label}
+                      variant="outline"
+                      className="cursor-pointer text-xs py-1.5 px-3"
+                      onClick={() => {
+                        const prefix = smeNotes.trim() ? smeNotes.trim() + "\n\n" : "";
+                        setSmeNotes(prefix + template.text);
+                      }}
+                      data-testid={`badge-template-${template.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      {template.label}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
               <Textarea
                 value={smeNotes}
                 onChange={(e) => setSmeNotes(e.target.value)}
-                placeholder="E.g., 'Focus heavily on architectural decisions' or 'Ask about experience with high-traffic systems'..."
+                placeholder={"What matters most for this role? For example:\n\n- \"The VP of Engineering wants someone who can design scalable systems\"\n- \"Must have experience with our tech stack: React, Node.js, AWS\"\n- \"Communication skills are more important than years of experience\"\n- \"Ask about their approach to code reviews and mentoring\""}
                 readOnly={isPreviewMode}
                 className={cn("min-h-[300px] text-base font-medium rounded-[2rem] border-border/60 bg-background/50 focus-visible:ring-primary/20 focus-visible:border-primary transition-all p-8 resize-none leading-relaxed", isPreviewMode && "cursor-not-allowed opacity-70")}
                 data-testid="textarea-sme"
@@ -876,8 +939,8 @@ export default function ProjectSetupPage() {
                   <Sparkles className="w-7 h-7 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">AI Ready</h4>
-                  <p className="text-sm text-muted-foreground font-medium">Click below to extract competencies and generate tailored rubrics.</p>
+                  <h4 className="text-sm font-black text-foreground/80 uppercase tracking-widest leading-none mb-1.5">Ready to Generate</h4>
+                  <p className="text-sm text-muted-foreground font-medium">AI will create precise screening questions with grading rubrics, fitted exactly to your screening time.</p>
                 </div>
               </div>
             )}
@@ -932,7 +995,7 @@ export default function ProjectSetupPage() {
                         Regenerate Questions?
                       </AlertDialogTitle>
                       <AlertDialogDescription className="text-base font-medium">
-                        Criteria have changed (JD, SME notes, screening time, or interview time). Regenerating will replace your existing questions with new ones based on the updated inputs.
+                        Your inputs have changed. Regenerating will replace your existing questions with new ones tailored to the updated job description, guidance notes, and time settings.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="gap-3">
@@ -973,7 +1036,7 @@ export default function ProjectSetupPage() {
                         {hasExistingQuestions ? "Regenerate Questions?" : "Generate Questions?"}
                       </AlertDialogTitle>
                       <AlertDialogDescription className="text-base font-medium">
-                        Candiq AI will analyze your JD and SME notes and generate screening questions with grading rubrics (Good vs Bad answers).
+                        Candiq AI will analyze your job description and expert guidance to generate precise screening questions with grading rubrics, fitted to your screening time.
                         {hasExistingQuestions && " This will replace your existing questions."}
                       </AlertDialogDescription>
                     </AlertDialogHeader>

@@ -12,20 +12,20 @@ import { motion, AnimatePresence } from "framer-motion";
 const STAGES = [
   {
     stage: 1 as const,
-    label: "JD & SME Notes",
-    sublabel: "Create questions",
+    label: "Setup & Input",
+    sublabel: "Role details & JD",
     icon: FileText,
   },
   {
     stage: 2 as const,
     label: "Questions",
-    sublabel: "Refine criteria",
+    sublabel: "Review & refine",
     icon: Edit,
   },
   {
     stage: 3 as const,
     label: "Interviews",
-    sublabel: "Scale hiring",
+    sublabel: "Start hiring",
     icon: Rocket,
   },
 ] as const;

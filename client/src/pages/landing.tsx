@@ -35,8 +35,8 @@ export default function LandingPage() {
               Interview like a Subject Matter Expert
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Candiq.AI helps HR and recruiters run SME-quality interviews for any role. 
-              Generate screening questions, get real-time suggestions, and create structured evaluation reports.
+              Even if you're not the technical expert, Candiq.AI generates precise screening questions
+              that fit your interview time. Just add the job description and let AI do the heavy lifting.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Button size="lg" asChild data-testid="button-get-started">
@@ -65,10 +65,10 @@ export default function LandingPage() {
                   <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
                     <FileText className="w-6 h-6 text-primary" />
                   </div>
-                  <CardTitle className="text-lg">Add Job Description</CardTitle>
+                  <CardTitle className="text-lg">Set Up in 3 Steps</CardTitle>
                   <CardDescription>
-                    Paste your JD (text) and SME notes. Our AI extracts key competencies and generates 
-                    10–15 screening questions with grading rubrics (Good vs Bad answers).
+                    Enter your interview timing, paste the job description, and add any guidance from your hiring team.
+                    AI generates precise screening questions fitted to your time.
                   </CardDescription>
                 </CardHeader>
               </Card>

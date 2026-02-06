@@ -201,7 +201,7 @@ export default function DashboardPage() {
                   <DialogHeader className="space-y-3">
                     <DialogTitle className="text-2xl font-black tracking-tight">Create Project</DialogTitle>
                     <DialogDescription className="text-base font-medium leading-relaxed">
-                      What role are you hiring for? You can customize the details in the next step.
+                      What role are you hiring for? We'll guide you through setting up the interview in 3 simple steps.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="py-8">
