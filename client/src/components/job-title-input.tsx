@@ -52,6 +52,9 @@ export function JobTitleInput({
     return match || "";
   }, [value, suggestions]);
 
+  // Track whether the user has interacted with the input (click/focus or typing)
+  const userInteracted = React.useRef(false);
+
   // Fetch suggestions from API when value changes
   React.useEffect(() => {
     const fetchSuggestions = async () => {
@@ -70,8 +73,8 @@ export function JobTitleInput({
           const titles = data.titles || [];
           setSuggestions(titles);
           setHighlightIndex(0);
-          // Keep dropdown open if we have results
-          if (titles.length > 0) {
+          // Only open dropdown if user has actively interacted (clicked/focused/typed)
+          if (titles.length > 0 && userInteracted.current) {
             setOpen(true);
           }
         }
@@ -90,14 +93,19 @@ export function JobTitleInput({
   const showList = open && (suggestions.length > 0 || (isLoading && value.length >= 2));
 
   const handleFocus = () => {
+    userInteracted.current = true;
     setOpen(true);
   };
 
   const handleBlur = () => {
-    setTimeout(() => setOpen(false), 200);
+    setTimeout(() => {
+      setOpen(false);
+      userInteracted.current = false;
+    }, 200);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    userInteracted.current = true;
     onChange(e.target.value);
     setOpen(true);
   };

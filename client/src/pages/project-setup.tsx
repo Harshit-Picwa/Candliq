@@ -501,7 +501,7 @@ export default function ProjectSetupPage() {
           {[
             { stepId: 1 as const, label: "Interview Setup", icon: Settings },
             { stepId: 2 as const, label: "Job Description", icon: FileText },
-            { stepId: 3 as const, label: "Expert Guidance", icon: Brain },
+            { stepId: 3 as const, label: "Subject Matter Expert Notes", icon: Brain },
           ].map(({ stepId, label, icon: Icon }, i) => (
             <div key={stepId} className="flex-1 relative">
               <button
@@ -871,7 +871,7 @@ export default function ProjectSetupPage() {
                     className="rounded-xl px-8 font-bold shadow-lg shadow-primary/20 gap-2 h-12"
                     disabled={!jdText.trim()}
                   >
-                    Next: Expert Guidance
+                    Next: SME Notes
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 )}
@@ -888,40 +888,13 @@ export default function ProjectSetupPage() {
               <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center">
                 <Brain className="w-5 h-5 text-primary" />
               </div>
-              <CardTitle className="text-2xl font-black tracking-tight">Expert Guidance</CardTitle>
+              <CardTitle className="text-2xl font-black tracking-tight">Subject Matter Expert Notes</CardTitle>
             </div>
             <CardDescription className="text-base font-medium ml-13">
               What does the hiring team or department head care about most? These notes help AI ask the right questions even if you're not the technical expert.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-10 pt-0 space-y-8">
-            {!isPreviewMode && (
-              <div className="space-y-3">
-                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/70 ml-1">Quick Templates (click to add)</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { label: "Leadership focus", text: "The hiring manager wants someone who can lead a team, mentor junior members, and make independent decisions. Focus on leadership and decision-making." },
-                    { label: "Hands-on builder", text: "We need a hands-on person who can build and ship quickly. Focus on practical experience, problem-solving, and ability to deliver under deadlines." },
-                    { label: "Culture fit", text: "Team collaboration is critical. Focus on communication skills, working across departments, and adapting to a fast-paced environment." },
-                    { label: "Domain expertise", text: "Deep industry knowledge is essential. Focus on specific domain experience, relevant certifications, and understanding of industry best practices." },
-                  ].map((template) => (
-                    <Badge
-                      key={template.label}
-                      variant="outline"
-                      className="cursor-pointer text-xs py-1.5 px-3"
-                      onClick={() => {
-                        const prefix = smeNotes.trim() ? smeNotes.trim() + "\n\n" : "";
-                        setSmeNotes(prefix + template.text);
-                      }}
-                      data-testid={`badge-template-${template.label.toLowerCase().replace(/\s+/g, '-')}`}
-                    >
-                      {template.label}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="space-y-4">
               <Textarea
                 value={smeNotes}

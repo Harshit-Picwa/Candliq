@@ -922,10 +922,10 @@ For each question provide:
 - A clear, scenario-based question tied to the JD
 - "estimatedMinutes": a realistic estimate of how long this question takes (asking + thinking + answering)
 - A rubric with:
-  - "typicalReasoning": 2-4 sentences on what practical skill this probes and what a strong answer demonstrates
-  - "goodSignals": 5 specific indicators of hands-on expertise
-  - "moderateSignals": 5 indicators of surface-level knowledge
-  - "poorSignals": 5 red flags showing lack of real experience
+  - "typicalReasoning": 4-6 sentences on what practical skill this probes and what a strong answer demonstrates
+  - "goodSignals": 5 specific indicators of hands-on expertise but bit detailed
+  - "moderateSignals": 5 indicators of surface-level knowledge but bit detailed
+  - "poorSignals": 5 red flags showing lack of real experience but bit detailed and explained why it is a poor signal
   - "notes": follow-up probing questions for the HR person
 
 Also include a timeAnalysis object that verifies whether all mandatory questions fit within the ${screeningTime} minute budget.

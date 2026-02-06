@@ -1201,19 +1201,6 @@ export default function QuestionsSetupPage() {
                                               )}
                                               placeholder="Enter question text..."
                                             />
-                                            {/* Complexity badge - only shown after AI analysis */}
-                                            {aiAnalysisComplete && (question as any).complexity && (
-                                              <div className="flex items-center gap-2 mt-2">
-                                                <span className={cn(
-                                                  "px-2 py-0.5 rounded text-[10px] font-bold uppercase",
-                                                  (question as any).complexity === "simple" ? "bg-green-500/10 text-green-600" :
-                                                  (question as any).complexity === "complex" ? "bg-amber-500/10 text-amber-600" :
-                                                  "bg-blue-500/10 text-blue-600"
-                                                )}>
-                                                  {(question as any).complexity} • {getQuestionMinutes(question)}m
-                                                </span>
-                                              </div>
-                                            )}
                                           </div>
                                           {!isPreviewMode && (
                                             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
