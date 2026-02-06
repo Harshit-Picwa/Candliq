@@ -181,7 +181,6 @@ export default function QuestionsSetupPage() {
   
   const [aiAnalysisComplete, setAiAnalysisComplete] = useState(false);
   const [aiAnalysisFailed, setAiAnalysisFailed] = useState(false);
-  const autoAnalysisTriggered = useRef(false);
   
   // Mutation to fetch AI time analysis
   const analyzeTime = useMutation({
@@ -233,10 +232,10 @@ export default function QuestionsSetupPage() {
       setApproved(project.status === "questions_approved");
       
       const hasEstimates = loadedQuestions.some((q: any) => typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0);
-      const hasIncluded = loadedQuestions.some((q: any) => q.isMandatory);
       if (hasEstimates) {
         setAiAnalysisComplete(true);
-      } else if (loadedQuestions.length > 0 && !hasEstimates) {
+        setAiAnalysisFailed(false);
+      } else if (loadedQuestions.length > 0) {
         setAiAnalysisComplete(false);
       }
       
@@ -254,17 +253,8 @@ export default function QuestionsSetupPage() {
     }
   }, [project]);
 
-  // Auto-trigger AI analysis when questions exist but have no time estimates
-  useEffect(() => {
-    if (questions.length > 0 && !aiAnalysisComplete && !aiAnalysisFailed && !autoAnalysisTriggered.current && !analyzeTime.isPending) {
-      const hasEstimates = questions.some((q: any) => typeof q.estimatedMinutes === "number" && q.estimatedMinutes > 0);
-      if (!hasEstimates) {
-        console.log("[auto-analysis] Questions have no estimates, triggering AI analysis");
-        autoAnalysisTriggered.current = true;
-        analyzeTime.mutate();
-      }
-    }
-  }, [questions, aiAnalysisComplete, aiAnalysisFailed]);
+  // Note: AI time analysis is now done inline on the backend during generation/regeneration/refinement.
+  // The analyzeTime mutation is kept only as a manual retry fallback if backend analysis fails.
 
   // Persist current stage when visiting this page (even if user doesn't change subtabs)
   useEffect(() => {
@@ -312,8 +302,6 @@ export default function QuestionsSetupPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", id] });
       setAiAnalysisFailed(false);
-      setAiAnalysisComplete(false);
-      autoAnalysisTriggered.current = false;
       toast({ title: "Questions regenerated", description: "New questions have been generated." });
     },
     onError: () => {
@@ -348,10 +336,6 @@ export default function QuestionsSetupPage() {
       setSelectedForRefine(new Set());
 
       setAiAnalysisFailed(false);
-      if (!variables.questionId) {
-        setAiAnalysisComplete(false);
-        autoAnalysisTriggered.current = false;
-      }
 
       let title = "Questions refined";
       if (variables.questionId) title = "Question refined";
@@ -1109,7 +1093,6 @@ export default function QuestionsSetupPage() {
                           data-testid="button-retry-analysis"
                           onClick={() => {
                             setAiAnalysisFailed(false);
-                            autoAnalysisTriggered.current = false;
                             analyzeTime.mutate();
                           }}
                         >
