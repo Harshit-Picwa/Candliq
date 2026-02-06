@@ -353,9 +353,8 @@ function isRetryableGeminiError(error: any) {
 }
 
 function getGeminiModelCandidates() {
-  const preferred = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
-  // Using Gemini 2.0 thinking models (Note: Gemini 3 doesn't exist yet, using latest thinking models)
-  const fallbacks = ["gemini-2.0-flash-thinking-exp-01-21", "gemini-2.0-flash-thinking-exp", "gemini-exp-1206"];
+  const preferred = process.env.GEMINI_MODEL || "gemini-2.5-pro";
+  const fallbacks = ["gemini-2.5-flash", "gemini-2.0-flash"];
   return [preferred, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
 }
 
@@ -792,28 +791,9 @@ export async function extractCompetenciesAndQuestions(
   existingQuestions?: ScreeningQuestion[],
   chatHistory: AIChatMessage[] = []
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
-  geminiLog.info(`extractCompetenciesAndQuestions called with Q&A duration (excludes intro/follow-ups): ${interviewDuration} min`);
-
-  const maxQuestions = calculateMaxQuestions(interviewDuration);
-  const bufferQuestions = calculateBufferQuestions(maxQuestions);
-  const totalQuestions = maxQuestions + bufferQuestions;
   const screeningTime = interviewDuration || 15;
-  
-  // Check if we need batched generation to avoid token limits
-  if (totalQuestions > MAX_QUESTIONS_PER_BATCH) {
-    geminiLog.info(`Large question count (${totalQuestions}), using batched generation to avoid token limits`);
-    return extractCompetenciesAndQuestionsBatched(
-      jdText, smeNotes, customInstructions, companyWebsite, location, 
-      interviewDuration, existingQuestions, chatHistory
-    );
-  }
-  
-  // Get adaptive complexity distribution based on interview duration
-  const dist = getAdaptiveComplexityDistribution(screeningTime, maxQuestions);
-  const expectedTotalTime = calculateTotalMinutes({ simple: dist.simple, moderate: dist.moderate, complex: dist.complex });
-  
-  geminiLog.info(`Will generate: ${maxQuestions} main Q&A questions + ${bufferQuestions} buffer = ${totalQuestions} total (for ${screeningTime} min Q&A time, excludes intro/follow-ups)`);
-  geminiLog.info(`Adaptive distribution: ${dist.simple} simple, ${dist.moderate} moderate, ${dist.complex} complex (expected ${expectedTotalTime.toFixed(1)} min)`);
+
+  geminiLog.info(`Will generate questions for ${screeningTime} min Q&A time`);
 
   const existingQuestionTexts = (existingQuestions || [])
     .map((q) => q?.question)
@@ -824,519 +804,74 @@ export async function extractCompetenciesAndQuestions(
     ? `\n\nEXISTING QUESTIONS (DO NOT DUPLICATE THESE):\n${existingQuestions.map((q, i) => `${i + 1}. ${q.question}`).join('\n')}\n`
     : '';
 
-  const prompt = `You are a subject matter expert in the role that is being hired. 
-
-═══════════════════════════════════════════════════════════════
-📋 STEP 1: READ AND ANALYZE THE JD THOROUGHLY
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL**: Before generating questions, CAREFULLY READ the entire Job Description and SME notes below. Identify:
-- SPECIFIC technologies, tools, frameworks, and languages mentioned (e.g., "FastAPI", "PostgreSQL", "Docker", "AWS")
-- EXACT responsibilities and requirements listed
-- Domain-specific terminology and concepts
-- Real-world challenges mentioned in SME notes
-
-**YOU MUST USE THESE EXACT TERMS IN YOUR QUESTIONS AND RUBRICS.**
+  const prompt = `You are a subject matter expert in the role that is being hired. Review the following Job Description for context.
 
 JOB DESCRIPTION:
-${jdText || "Enter JD here"}
+${jdText || "No JD provided"}
 
-LOCATION: ${location || "Melbourne, Victoria"}
+LOCATION: ${location || "Not specified"}
 
-SME NOTES (Real-world context and priorities):
-${smeNotes || "Enter SME Notes here"}
-${customInstructions ? `\n\nADDITIONAL CUSTOM INSTRUCTIONS:\n${customInstructions}\n` : ''}
-${companyWebsite ? `\n\nCOMPANY WEBSITE: ${companyWebsite}\n` : ''}${existingQuestionsSection}
+${smeNotes ? `Here are also some notes from the Subject Matter Expert for more context:\n${smeNotes}` : ''}
+${customInstructions ? `ADDITIONAL INSTRUCTIONS:\n${customInstructions}` : ''}
+${companyWebsite ? `COMPANY WEBSITE: ${companyWebsite}` : ''}
+${existingQuestionsSection}
 
-═══════════════════════════════════════════════════════════════
-🚨 CRITICAL TIME BUDGET CONSTRAINT - ANALYZE AS YOU GENERATE 🚨
-═══════════════════════════════════════════════════════════════
+You are wanting your hiring manager to ask some skills & experience specific questions that are easy for them to ask without subject matter expertise. During a screening conversation the questions, thinking time and answers between the Hiring Manager and Candidate must take no longer than ${screeningTime} minutes (give buffer for human reason).
 
-**CRITICAL:** The **${screeningTime} minutes** is EXCLUSIVELY for planned Q&A screening questions.
+According to all of this create questions with expected answers and a screening criteria (Good-fit answer, moderate-fit answer, bad-fit answer) that will be easy for the hiring manager to ask and also conclude if the candidate is a good-fit. Questions can be scenario based or actually asking about a skill directly.
 
-**NOT INCLUDED IN THIS TIME:**
-- ❌ Introduction/Opening remarks (separate time allocation)
-- ❌ Follow-up questions (asked spontaneously during interview)
-- ❌ Wrap-up/Closing (separate time allocation)
+Include some additional questions (2-3 extra) where the Hiring Manager may choose to ask other ones instead, clearly marking them as additional/optional with "isMandatory": false.
 
-**INCLUDED IN THIS TIME:**
-- ✅ ONLY the ${maxQuestions} main planned screening questions you generate below
+The objective from this is so that the hiring manager can save time of the subject matter expert employees by reducing candidates that are clearly not a good-fit and ones that just answer buzzwords and lack needed experience/knowledge.
 
-Use the FULL ${screeningTime} minutes for planned Q&A questions.
+IMPORTANT GUIDELINES:
+1. The TOTAL time for ALL main (mandatory) questions must fit within ${screeningTime} minutes including asking time, candidate thinking time, and answering time.
+2. For each question, estimate the realistic time in minutes it would take (asking + thinking + answering). Do NOT use fixed/hardcoded values - estimate based on the actual question complexity and scope.
+3. Extract 3-5 key competencies directly from the JD.
+4. Every question must reference SPECIFIC technologies, tools, or responsibilities from the JD.
+5. Questions must test PRACTICAL EXPERIENCE, not theoretical knowledge.
+6. Include exactly 5 signals each for goodSignals, moderateSignals, and poorSignals in each rubric.
+7. NO culture-fit, soft-skills, or reverse questions. Focus exclusively on technical/domain competency.
+8. Each question must be unique and non-repetitive.
 
-**TIME BREAKDOWN PER QUESTION TYPE:**
-- **SIMPLE question** (debugging steps, tool usage): **EXACTLY 2.0 minutes** total
-  - Ask (20s) + Candidate thinks & answers (90s) + Transition (10s)
-  - Example: "Walk me through debugging a slow API endpoint"
-  
-- **MODERATE question** (scenario/trade-offs): **EXACTLY 2.5 minutes** total  
-  - Ask (20s) + Candidate thinks & answers (120s) + Transition (10s)
-  - Example: "Your database query is slow - what's your diagnostic approach?"
-  
-- **COMPLEX question** (architecture/optimization): **EXACTLY 3.0 minutes** total
-  - Ask (30s) + Candidate thinks & answers (135s) + Transition (15s)
-  - Example: "Design a caching strategy for this high-traffic API"
+For each question provide:
+- A clear, scenario-based question tied to the JD
+- "estimatedMinutes": a realistic estimate of how long this question takes (asking + thinking + answering)
+- A rubric with:
+  - "typicalReasoning": 2-4 sentences on what practical skill this probes and what a strong answer demonstrates
+  - "goodSignals": 5 specific indicators of hands-on expertise
+  - "moderateSignals": 5 indicators of surface-level knowledge
+  - "poorSignals": 5 red flags showing lack of real experience
+  - "notes": follow-up probing questions for the HR person
 
-**YOUR TIME BUDGET (Planned Questions Only):**
-- Total available time: **${screeningTime} minutes**
-- Target average per question: **2.5 minutes**
-- **MAIN QUESTIONS: ${maxQuestions} questions** (mandatory, fit in ${screeningTime} min)
-- **BUFFER QUESTIONS: ${bufferQuestions} questions** (optional, for flexibility if main questions excluded)
-- **TOTAL TO GENERATE: ${totalQuestions} questions**
+Also include a timeAnalysis object that verifies whether all mandatory questions fit within the ${screeningTime} minute budget.
 
-**QUESTION ALLOCATION:**
-- First ${maxQuestions} questions: Mark as "isMandatory": true (these MUST fit in ${screeningTime} min)
-- Last ${bufferQuestions} questions: Mark as "isMandatory": false (backup/optional questions)
-
-**MANDATORY QUESTION MIX BY COMPLEXITY (for ${maxQuestions} main questions):**
-
-**TIME-OPTIMIZED DISTRIBUTION:**
-- ${dist.simple} SIMPLE questions (2.0 min each): Debugging steps, tool usage, specific techniques
-- ${dist.moderate} MODERATE questions (2.5 min each): Scenario-based, trade-off decisions
-- ${dist.complex} COMPLEX questions (3.0 min each): Architecture, optimization, system design
-
-**This gives: (${dist.simple} × 2.0) + (${dist.moderate} × 2.5) + (${dist.complex} × 3.0) = ${expectedTotalTime.toFixed(1)} minutes**
-
-${screeningTime <= 10 ? `**⚡ SHORT INTERVIEW MODE: Prioritize SIMPLE questions for quick, focused answers!**` : 
-  screeningTime > 20 ? `**🔍 DEEP EVALUATION MODE: Include more COMPLEX questions for thorough assessment!**` : ``}
-
-**QUESTION PATTERNS (ALL MUST BE SCENARIO-BASED):**
-- 35%: Debugging/Troubleshooting ("When X breaks, how do you diagnose and fix it?")
-- 30%: Trade-off decisions ("Choose between A and B - what factors matter?")
-- 20%: Optimization/Performance ("How would you optimize X for Y constraint?")
-- 15%: Production readiness ("How do you ensure X works reliably in production?")
-
-═══════════════════════════════════════════════════════════════
-⏱️ GENERATE ${totalQuestions} QUESTIONS (${maxQuestions} MAIN + ${bufferQuestions} BUFFER)
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL INSTRUCTIONS:**
-1. **Generate exactly ${totalQuestions} questions total:**
-   - First ${maxQuestions} questions: Set "isMandatory": true (main questions)
-   - Last ${bufferQuestions} questions: Set "isMandatory": false (buffer/optional)
-
-2. **Design each question to be answerable in ~2-3 minutes** - avoid overly complex questions
-
-3. **Balance question complexity** - mix quick technical checks (1.5-2 min) with deeper scenarios (2.5-3 min)
-
-4. **Time budget validation:**
-   - Main ${maxQuestions} questions MUST total ≤${screeningTime} minutes (target: ${maxQuestions * 2.5} min)
-   - Buffer questions are NOT counted in time budget (they're backups)
-
-5. **Buffer question purpose:** If interviewer excludes a main question, they can include a buffer question instead
-
-**TIME SCOPE REMINDER:**
-The ${screeningTime} minutes = ONLY planned Q&A screening questions
-NOT included: introduction, follow-ups, closing (these have separate time)
-
-The objective is to help the hiring manager efficiently screen candidates by asking targeted questions that reveal technical competency and filter out candidates who only speak in buzzwords without real experience.
-
-Produce this in a JSON Format.
-
-═══════════════════════════════════════════════════════════════
-📋 STEP 2: EXTRACT JD-SPECIFIC INFORMATION (Mental Checklist)
-═══════════════════════════════════════════════════════════════
-
-Before writing questions, mentally identify from the JD above:
-- List of SPECIFIC technologies (programming languages, frameworks, databases, cloud platforms)
-- Key technical responsibilities (what will they build, maintain, optimize?)
-- Domain knowledge areas (e.g., payment systems, data pipelines, security)
-- Performance/quality requirements (scalability, testing, monitoring)
-
-**Your questions MUST map directly to items on this list.**
-
-═══════════════════════════════════════════════════════════════
-📋 STEP 3: GENERATE JD-ALIGNED QUESTIONS
-═══════════════════════════════════════════════════════════════
-
-Instructions for Output:
-1. **DEEPLY ANALYZE THE JD AND SME NOTES FIRST:**
-   - Extract 3-5 key competencies DIRECTLY from the job description
-   - Focus on the EXACT technical requirements, tools, frameworks, and technologies mentioned
-   - Identify specific responsibilities and domain knowledge areas from the JD
-   - Use SME notes to understand real-world challenges and priorities for this role
-
-2. **Generate EXACTLY ${totalQuestions} questions total (${maxQuestions} main + ${bufferQuestions} buffer):**
-   - First ${maxQuestions} questions: Set "isMandatory": true
-   - Last ${bufferQuestions} questions: Set "isMandatory": false
-   - **CRITICAL**: Every question MUST map to a SPECIFIC requirement or technology mentioned in the JD/SME notes
-   - Do NOT use generic questions that could apply to any role
-   
-3. **⏱️ COMPLEXITY CLASSIFICATION (CRITICAL - READ CAREFULLY):**
-
-   **🎯 COMPLEXITY IS DETERMINED BY STRUCTURE, NOT JUST TOPIC:**
-   
-   ═══════════════════════════════════════════════════════════════
-   📗 SIMPLE (2.0 min) - ONE focused concept, ONE clear answer
-   ═══════════════════════════════════════════════════════════════
-   **RULES:**
-   - Asks about ONE specific thing (one tool, one command, one technique)
-   - Can be answered in 3-5 sentences
-   - Has a relatively straightforward "right answer"
-   - Max 25 words in the question
-   
-   **✅ SIMPLE EXAMPLES:**
-   - "How do you check why a Kubernetes pod is in CrashLoopBackOff?" (14 words, ONE diagnostic task)
-   - "What kubectl command shows container logs?" (6 words, ONE command)
-   - "How do you identify a slow PostgreSQL query?" (8 words, ONE technique)
-   
-   **❌ NOT SIMPLE (wrongly classified):**
-   - "Walk me through Dockerfile optimizations AND CI/CD quality gates..." (MULTIPLE concepts = COMPLEX)
-   - "Explain debugging workflow to check OOM, Liveness probe, OR Secrets..." (MULTIPLE scenarios = COMPLEX)
-   
-   ═══════════════════════════════════════════════════════════════
-   📘 MODERATE (2.5 min) - TWO concepts OR one trade-off decision
-   ═══════════════════════════════════════════════════════════════
-   **RULES:**
-   - Compares TWO options OR asks for trade-off analysis
-   - Requires weighing factors, not just listing steps
-   - Can be answered in 5-8 sentences
-   - Max 40 words in the question
-   
-   **✅ MODERATE EXAMPLES:**
-   - "Redis vs PostgreSQL for session storage - what factors drive your choice?" (11 words, TWO options)
-   - "When would you use async vs sync processing in your Python API?" (12 words, trade-off)
-   - "How do you decide between horizontal and vertical scaling for your service?" (12 words, TWO approaches)
-   
-   ═══════════════════════════════════════════════════════════════
-   📕 COMPLEX (3.0 min) - THREE+ concepts OR system design
-   ═══════════════════════════════════════════════════════════════
-   **RULES:**
-   - Involves THREE or more interconnected concepts
-   - Requires architectural thinking or multi-step design
-   - Uses words like "AND", "OR" connecting multiple topics
-   - Can be answered in 8-12 sentences
-   - Can be up to 60 words in the question
-   
-   **✅ COMPLEX EXAMPLES:**
-   - "Your pods are in CrashLoopBackOff. Walk me through checking OOM kills, Liveness probe failures, AND missing Secrets." (THREE things to check = COMPLEX)
-   - "Design a rate limiter for 10 pods using Redis. Why won't sync.Mutex work?" (distributed design + reasoning = COMPLEX)
-   
-   ═══════════════════════════════════════════════════════════════
-   🚨 SELF-CHECK BEFORE ASSIGNING COMPLEXITY:
-   ═══════════════════════════════════════════════════════════════
-   
-   **Count the concepts in your question:**
-   - 1 concept → SIMPLE
-   - 2 concepts OR 1 trade-off → MODERATE  
-   - 3+ concepts OR system design → COMPLEX
-   
-   **Check for these COMPLEXITY ESCALATORS:**
-   - "AND" connecting topics → escalates complexity
-   - "Walk me through" + multiple steps → likely MODERATE or COMPLEX
-   - Multiple technologies mentioned → likely MODERATE or COMPLEX
-   - "Design", "architect", "implement end-to-end" → COMPLEX
-   
-   **TARGET DISTRIBUTION for ${maxQuestions} main questions:**
-   - ${dist.simple} SIMPLE questions (2.0 min each) - ONE concept, max 25 words
-   - ${dist.moderate} MODERATE questions (2.5 min each) - TWO concepts/trade-off, max 40 words
-   - ${dist.complex} COMPLEX questions (3.0 min each) - THREE+ concepts/design, max 60 words
-   - **TOTAL: ${expectedTotalTime.toFixed(1)} minutes (MUST BE ≤ ${screeningTime} minutes)**
-
-3. **Ensure questions are STRONG, RIGOROUS, and JD-ALIGNED:**
-   - At least 70% must be **Deep Scenario-Based** questions using the ACTUAL tools/stack mentioned in the JD
-   - Questions must probe for PRACTICAL EXPERIENCE, not just theoretical knowledge
-   - Include trade-off decisions and real-world constraints (performance, scalability, security)
-   - Ask about challenges, debugging, and problem-solving, not just "how would you..."
-   - Reference SPECIFIC technologies, frameworks, or methodologies from the JD
-   - Address real problems and challenges mentioned in the SME notes
-   - **STRONG Example**: "When your FastAPI endpoint starts timing out under load, how do you identify and fix the bottleneck?"
-   - **WEAK Example**: "What is FastAPI and how does it work?"
-
-4. **Each question must be STRONG and answerable in 2-3 minutes.**
-   - **STRENGTH CHECK**: Questions should separate strong candidates from weak ones
-   - **TIME CHECK**: Can a candidate give a COMPLETE, DETAILED answer in 2-3 minutes?
-   
-   **❌ WEAK QUESTIONS (Too basic, anyone can answer):**
-   - "What is FastAPI?" (Definitional)
-   - "Have you used Docker before?" (Yes/no)
-   - "Tell me about your experience with React" (Too vague)
-   
-   **❌ TOO COMPLEX (4+ minutes):**
-   - "Explain your entire architecture from frontend to database with all the trade-offs"
-   - "Walk me through how you would design a scalable microservices system from scratch"
-   
-   **✅ STRONG QUESTIONS (Probe practical experience & problem-solving, 2-3 min):**
-   - If JD mentions "FastAPI": "Your FastAPI endpoint is returning 504 timeouts after deploying to production. Walk me through your debugging process and common causes you'd check."
-   - If JD mentions "React": "You notice a React dashboard re-rendering on every keystroke, causing lag. How would you identify which component is causing the issue and fix it?"
-   - If JD mentions "PostgreSQL": "A JOIN query between users and orders is taking 8 seconds. What's your step-by-step approach to diagnose and optimize it?"
-   
-   **STRONG QUESTION PATTERNS:**
-   - "When [problem occurs], how do you [diagnose/fix]..."
-   - "You need to [achieve goal] but [constraint]. What's your approach?"
-   - "Walk me through debugging [specific issue] in [technology]"
-   - "What trade-offs would you consider when [technical decision]?"
-   
-   **🎯 MANDATORY COMPLEXITY MIX (${maxQuestions} questions total):**
-   - ${dist.simple} SIMPLE questions (debugging steps, tool usage) - EXACTLY 2.0 min each
-   - ${dist.moderate} MODERATE questions (scenarios, trade-offs) - EXACTLY 2.5 min each
-   - ${dist.complex} COMPLEX questions (architecture, optimization) - EXACTLY 3.0 min each
-   - **Total: (${dist.simple} × 2.0) + (${dist.moderate} × 2.5) + (${dist.complex} × 3.0) = ${expectedTotalTime.toFixed(1)} minutes**
-
-5. **GROUND EVERY QUESTION IN THE JD/SME NOTES WITH STRONG SCENARIOS:**
-   - Use SPECIFIC technologies mentioned (e.g., "Docker", "Kubernetes", "React", "PostgreSQL")
-   - Reference ACTUAL responsibilities from the JD (e.g., "optimize database queries", "design microservices")
-   - Address challenges mentioned in SME notes with problem-solving scenarios
-   
-   **QUESTION STRENGTH EXAMPLES:**
-   - **WEAK (generic)**: "How do you handle errors in APIs?"
-   - **BETTER (JD-specific)**: "How would you handle rate-limiting errors when calling the Stripe API?" (if Stripe is in JD)
-   - **STRONGEST (JD-specific + scenario)**: "Your app is getting 429 rate-limit errors from the Stripe API during peak hours. Walk me through your troubleshooting and solution approach." (if Stripe is in JD)
-
-6. ABSOLUTELY NO CULTURE-FIT OR SOFT-SKILLS QUESTIONS. Do not ask about personality, teamwork (unless technical collaboration like Git workflow), or "where they see themselves." Focus exclusively on the hard skills, domain knowledge, and operational proficiency EXPLICITLY required by the JD and SME notes.
-
-7. NO REVERSE QUESTIONS: Do not generate questions that ask the candidate if they have questions for the interviewer (e.g., "What questions do you have for me?"). Every question must be a technical or scenario-based evaluation of the candidate.
-
-8. UNIQUE AND NON-REPETITIVE: Every question in this set MUST be completely unique from the others. Do not repeat the same concept across different questions.${existingQuestions && existingQuestions.length > 0 ? ' The EXISTING QUESTIONS section above shows questions already used - do NOT repeat or paraphrase them in any way.' : ''}
-
-9. For each question, provide a **RIGOROUS** rubric EXPLICITLY DESIGNED for a non-technical HR interviewer to use for grading as a **'Strength-Assessment' tool**:
-   - **typicalReasoning**: A short, declarative paragraph (2–4 sentences) that (1) states what PRACTICAL SKILL OR EXPERIENCE the question is probing and why it separates strong from weak candidates, (2) names the SPECIFIC technologies/concepts from the JD and the EXACT STEPS or APPROACHES a strong answer must demonstrate, and (3) describes what DEEP, PRACTICAL reasoning looks like (not just theoretical knowledge). Write in clear, direct statements (e.g. "A strong answer will walk through specific debugging steps...", "The ideal response demonstrates hands-on experience by mentioning..."). Reference the ACTUAL tools/frameworks and REAL-WORLD usage from the JD. Explain how this question filters out candidates who only know buzzwords.
-   
-   **⚠️ FORBIDDEN IN typicalReasoning:**
-   - DO NOT mention time estimates (e.g., "should take 2 minutes", "under 2 minutes")
-   - DO NOT mention how long the answer should take
-   - DO NOT include phrases like "answered in X minutes" or "within X minutes"
-   - ONLY focus on what demonstrates REAL experience and competence
-   
-   - **goodSignals** (STRONG/EXPERT Answer Indicators): Exactly 5 highly specific, detailed points that prove HANDS-ON EXPERIENCE and DEEP UNDERSTANDING. Each signal must show the candidate has actually DONE this, not just read about it. Reference SPECIFIC technologies from the JD and look for:
-     - Step-by-step troubleshooting approaches (shows real debugging experience)
-     - Specific tool commands, configuration, or code patterns (proves hands-on usage)
-     - Trade-off awareness and production considerations (demonstrates seniority)
-     - Concrete examples or metrics (shows real-world application)
-     Example: "BEST: Describes checking slow query logs using pg_stat_statements, then explains using EXPLAIN ANALYZE to identify missing indexes, and mentions creating partial indexes for common WHERE clauses" (if PostgreSQL in JD)
-   
-   - **moderateSignals** (AVERAGE/MID-LEVEL Answer Indicators): Exactly 5 points showing technically correct but SURFACE-LEVEL knowledge. These candidates know the concepts but lack depth or practical experience:
-     - Mentions general approaches without specific tools/commands
-     - Correct but generic answers (not JD-specific)
-     - Lacks production/scaling considerations
-     Example: "MODERATE: Says they would 'check for slow queries and add indexes' but doesn't mention specific PostgreSQL tools or techniques"
-   
-   - **poorSignals** (WEAK/RED FLAG Indicators): Exactly 5 clear red flags that expose LACK OF REAL EXPERIENCE:
-     - Fundamentally incorrect understanding
-     - Suggests approaches that contradict the JD tech stack
-     - Cannot explain HOW they would do something (theory only)
-     - Generic buzzword answers with no specifics
-     - Dangerous or anti-pattern approaches
-     Example: "RED FLAG: Suggests adding indexes to all columns without considering trade-offs, or cannot explain how to identify which queries are slow"
-   
-   - **notes**: Specific domain-specific probing questions for the HR person to use if the initial answer is vague.
-
-CRITICAL: You are acting as a world-class Subject Matter Expert designing a RIGOROUS SCREENING PROCESS for THIS SPECIFIC ROLE. 
-
-**YOUR MISSION**: Create questions that FILTER OUT weak candidates and IDENTIFY strong, experienced candidates who have real hands-on experience with the technologies in the JD.
-
-**JD/SME ALIGNMENT REQUIREMENTS:**
-- Every question MUST tie directly to a requirement, technology, or responsibility in the JD
-- Use EXACT tool/framework names mentioned in the JD (e.g., "React", "PostgreSQL", "AWS Lambda")
-- Reference SPECIFIC challenges or priorities from the SME notes
-- Frame questions as REAL PROBLEMS the candidate will face in this role
-- Questions should expose candidates who only know buzzwords vs those with real experience
-- Rubrics must include the ACTUAL technical terms from the JD so interviewers can match candidate responses
-- Avoid generic questions that could apply to any role in this field
-
-**STRENGTH & FILTERING REQUIREMENTS:**
-- Questions must DIFFERENTIATE between junior/mid/senior level candidates
-- Focus on PRACTICAL PROBLEM-SOLVING, not memorized definitions
-- Include TRADE-OFFS, DEBUGGING, and PRODUCTION scenarios
-- Strong candidates should provide SPECIFIC STEPS, TOOLS, and EXPERIENCES
-- Weak candidates should be exposed when they give vague, generic answers
-
-**RUBRIC PRECISION:**
-The rubrics must be RIGOROUS and so precise that an interviewer with NO domain knowledge can accurately distinguish between:
-- **STRONG candidates**: Give step-by-step approaches, mention specific tools/commands, show trade-off awareness
-- **AVERAGE candidates**: Know the concepts but lack depth or practical experience
-- **WEAK candidates**: Use buzzwords without specifics, cannot explain HOW, or suggest wrong approaches
-
-Avoid generic filler. Direct matches to technical concepts from the JD are mandatory. Each rubric signal should clearly identify what separates strong from weak answers.
-
-═══════════════════════════════════════════════════════════════
-⏱️ MANDATORY TIME VALIDATION BEFORE SUBMITTING ⏱️
-═══════════════════════════════════════════════════════════════
-
-**STOP! Before you output the JSON, VERIFY EACH ITEM:**
-
-1. ✓ Question count: Exactly ${totalQuestions} questions total (count them manually!)
-   - First ${maxQuestions} questions: "isMandatory": true
-   - Last ${bufferQuestions} questions: "isMandatory": false
-
-2. ✓ Complexity distribution (MANDATORY mix for ${maxQuestions} main questions):
-   - ${dist.simple} SIMPLE questions @ 2.0 min each = ${(dist.simple * 2.0).toFixed(1)} min
-   - ${dist.moderate} MODERATE questions @ 2.5 min each = ${(dist.moderate * 2.5).toFixed(1)} min
-   - ${dist.complex} COMPLEX questions @ 3.0 min each = ${(dist.complex * 3.0).toFixed(1)} min
-   - **TOTAL MUST BE: ${expectedTotalTime.toFixed(1)} minutes**
-
-3. ✓ Time calculation (ONLY the ${maxQuestions} MAIN questions):
-   - Use the EXACT complexity distribution above
-   - Target total: **${expectedTotalTime.toFixed(1)} minutes** (within ${screeningTime} min budget)
-   - Buffer questions are NOT counted in time budget
-   - DO NOT exceed ${screeningTime} minutes for main questions
-
-4. ✓ **🚨 COMPLEXITY VALIDATION (DO THIS FOR EVERY QUESTION):**
-   
-   **For each question you mark as SIMPLE, verify:**
-   - [ ] Contains only ONE concept/topic? (If "AND" connects topics → NOT SIMPLE)
-   - [ ] Max 25 words? (Count them!)
-   - [ ] Does NOT ask for multiple steps? (If "walk me through X, Y, AND Z" → NOT SIMPLE)
-   - [ ] Does NOT mention 3+ technologies? (If Docker + CI/CD + Kubernetes → NOT SIMPLE)
-   
-   **For each question you mark as MODERATE, verify:**
-   - [ ] Contains exactly TWO concepts OR one trade-off?
-   - [ ] Max 40 words?
-   - [ ] Does NOT require system design thinking?
-   
-   **For each question you mark as COMPLEX, verify:**
-   - [ ] Contains THREE+ interconnected concepts?
-   - [ ] OR requires architectural/system design thinking?
-   - [ ] Max 60 words?
-
-5. ✓ **WORD COUNT ENFORCEMENT:**
-   - SIMPLE: ≤25 words (if longer, it's probably MODERATE or COMPLEX)
-   - MODERATE: ≤40 words
-   - COMPLEX: ≤60 words
-   
-6. ✓ **MISCLASSIFICATION CHECK (READ CAREFULLY):**
-   ❌ WRONG: "Walk me through Dockerfile optimizations AND CI/CD quality gates for Python, Java, or Go..." marked as SIMPLE
-   ✅ CORRECT: This has 3+ concepts (Dockerfile + CI/CD + multiple languages) → must be COMPLEX
-   
-   ❌ WRONG: "Debug CrashLoopBackOff checking OOM, Liveness probe, OR Secrets" marked as SIMPLE  
-   ✅ CORRECT: This has 3 scenarios to check → must be COMPLEX
-   
-   ❌ WRONG: "How do you check pod logs?" marked as COMPLEX
-   ✅ CORRECT: This is ONE simple command → must be SIMPLE
-
-7. ✓ Each question tests ONE specific skill and can be answered concisely with concrete examples
-
-8. ✓ **FINAL COMPLEXITY ACCURACY CHECK:**
-   - Count concepts in each SIMPLE question - must be exactly 1
-   - Count concepts in each MODERATE question - must be exactly 2 or 1 trade-off
-   - Count concepts in each COMPLEX question - must be 3+ or system design
-   
-10. ✓ QUESTION STRENGTH CHECK (CRITICAL):
-   - Every question tests PRACTICAL EXPERIENCE, not just theoretical knowledge
-   - At least 70% are scenario-based (debugging, trade-offs, problem-solving)
-   - Questions will separate strong candidates from weak ones
-   - No questions that can be answered with memorized definitions
-   - No "Have you used X?" or "What is X?" questions
-   
-11. ✓ JD/SME ALIGNMENT CHECK (CRITICAL):
-   - Every question references SPECIFIC technologies/tools from the JD
-   - Questions address ACTUAL responsibilities listed in the JD
-   - No generic questions that could apply to any role
-   - Rubric signals use the EXACT terminology from the JD
-   - If the JD mentions "FastAPI", questions/rubrics say "FastAPI", NOT "Python web framework"
-
-12. ✓ RUBRIC RIGOR CHECK:
-   - Good signals prove HANDS-ON experience with specific examples/steps
-   - Moderate signals show surface knowledge without depth
-   - Poor signals identify buzzword users and dangerous practices
-   - Signals clearly differentiate junior vs mid vs senior candidates
-
-═══════════════════════════════════════════════════════════════
-🎯 FINAL MANDATORY REQUIREMENTS CHECKLIST
-═══════════════════════════════════════════════════════════════
-
-**QUESTION COUNT:** Generate EXACTLY ${totalQuestions} questions
-- First ${maxQuestions} questions: "isMandatory": true
-- Last ${bufferQuestions} questions: "isMandatory": false
-
-**⏱️ TIME-BOUNDED GENERATION (CRITICAL):**
-For EACH question, you MUST assign:
-- "complexity": "simple" | "moderate" | "complex"
-- "estimatedMinutes": 2.0 (simple) | 2.5 (moderate) | 3.0 (complex)
-
-**🚨 COMPLEXITY CLASSIFICATION RULES (MUST FOLLOW):**
-| Complexity | # Concepts | Max Words | Example Pattern |
-|------------|------------|-----------|-----------------|
-| SIMPLE     | 1          | 25        | "How do you X?" |
-| MODERATE   | 2 or trade-off | 40   | "X vs Y - what factors?" |
-| COMPLEX    | 3+ or design | 60     | "Design X considering A, B, and C" |
-
-**⚠️ BEFORE MARKING ANY QUESTION AS SIMPLE:**
-- Does it have "AND" connecting multiple topics? → NOT SIMPLE, upgrade to MODERATE or COMPLEX
-- Does it mention 3+ technologies? → NOT SIMPLE, upgrade to COMPLEX
-- Does it say "walk me through" multiple scenarios? → NOT SIMPLE, upgrade to COMPLEX
-
-**COMPLEXITY MIX (for ${maxQuestions} main questions):**
-- ${dist.simple} SIMPLE @ 2.0 min = ${(dist.simple * 2.0).toFixed(1)} min (1 concept, ≤25 words each)
-- ${dist.moderate} MODERATE @ 2.5 min = ${(dist.moderate * 2.5).toFixed(1)} min (2 concepts, ≤40 words each)
-- ${dist.complex} COMPLEX @ 3.0 min = ${(dist.complex * 3.0).toFixed(1)} min (3+ concepts, ≤60 words each)
-- **TOTAL Q&A TIME: ${expectedTotalTime.toFixed(1)} minutes (≤${screeningTime} min Q&A budget)**
-
-${screeningTime <= 10 ? `**⚡ SHORT INTERVIEW (${screeningTime} min): Generate simpler, focused questions!**` : 
-  screeningTime > 20 ? `**🔍 DEEP INTERVIEW (${screeningTime} min): Include more complex questions!**` : ``}
-
-**INCLUDE timeAnalysis OBJECT:**
-After questions array, include:
-{
-  "timeAnalysis": {
-    "totalMinutes": <sum of all main question estimatedMinutes>,
-    "breakdown": { "simple": X, "moderate": Y, "complex": Z },
-    "withinBudget": <true if totalMinutes <= ${screeningTime}>,
-    "summary": "<X simple + Y moderate + Z complex = total min>"
-  }
-}
-
-**⚠️ TIME SCOPE:** ${screeningTime} min = ONLY planned Q&A questions (excludes intro/follow-ups/outro)
-
-**QUESTION STRENGTH:** 70%+ scenario-based, ALL JD-SPECIFIC & RIGOROUS
-**RUBRICS:** Exact JD terminology, 5 signals each (good/moderate/poor)
-
-═══════════════════════════════════════════════════════════════
-
-Respond with a JSON object in this exact format:
+Produce this in a JSON Format:
 {
   "competencies": [
-    {
-      "id": "comp_1",
-      "name": "Backend Development",
-      "description": "Proficiency in API design and server-side logic"
-    }
+    { "id": "comp_1", "name": "...", "description": "..." }
   ],
   "questions": [
     {
       "id": "q_1",
       "competencyId": "comp_1",
-      "question": "How do you check why a FastAPI endpoint is returning 500 errors?",
-      "complexity": "simple",
-      "estimatedMinutes": 2.0,
+      "question": "...",
+      "estimatedMinutes": <realistic time estimate>,
       "rubric": {
-        "typicalReasoning": "This question tests whether the candidate has real production experience with FastAPI error handling, not just theoretical knowledge. Strong candidates will demonstrate hands-on experience by describing specific FastAPI features (HTTPException, custom exception handlers), concrete logging setup (Python's logging module with proper levels), and production best practices (never exposing stack traces to users). This separates candidates who have actually debugged production FastAPI apps from those who only know the basics.",
-        "goodSignals": [
-          "BEST: Describes setting up a custom exception handler using @app.exception_handler() decorator to centralize error handling, showing hands-on FastAPI experience.",
-          "BEST: Explains configuring Python's logging module with different log levels (ERROR for exceptions, INFO for normal flow) and mentions sending logs to a service like CloudWatch or Sentry for production monitoring.",
-          "BEST: Mentions using HTTPException for client errors (400-499) vs regular exceptions for server errors (500), and explains returning Pydantic models for consistent error responses.",
-          "BEST: Describes specific debugging steps: checking FastAPI's automatic validation errors, adding structured logging with request_id for tracing, and using middleware to capture all unhandled exceptions.",
-          "BEST: Explains the trade-off between detailed error messages for debugging vs sanitized messages for users, and mentions environment-based configuration (detailed in dev, sanitized in prod)."
-        ],
-        "moderateSignals": [
-          "MODERATE: Mentions using try/except blocks and HTTPException but doesn't explain a centralized error handling strategy or production logging setup.",
-          "MODERATE: Says they would 'add logging' but doesn't specify which Python logging library, log levels, or where logs would be sent in production.",
-          "MODERATE: Knows about returning JSON errors but doesn't mention Pydantic models or consistent error response schemas.",
-          "MODERATE: Describes error handling generally but doesn't reference FastAPI-specific features like exception handlers or automatic Pydantic validation.",
-          "MODERATE: Mentions separating dev and prod error messages but doesn't explain HOW this would be implemented (environment variables, config, etc.)."
-        ],
-        "poorSignals": [
-          "RED FLAG: Suggests catching all exceptions with 'except Exception: pass' or returning generic error messages without proper logging, which makes debugging impossible.",
-          "RED FLAG: Proposes using print() statements instead of proper logging, showing lack of production experience.",
-          "RED FLAG: Cannot explain the difference between 4xx (client errors) and 5xx (server errors) status codes or when to use each.",
-          "RED FLAG: Suggests exposing full Python stack traces to users in production, which is a security risk and provides no value to end users.",
-          "RED FLAG: Confuses FastAPI error handling with other frameworks (like Django or Flask) or cannot name any FastAPI-specific error handling features."
-        ],
-        "notes": "Ask: 'How do you distinguish between an error caused by invalid input versus a database failure?'"
+        "typicalReasoning": "...",
+        "goodSignals": ["...", "...", "...", "...", "..."],
+        "moderateSignals": ["...", "...", "...", "...", "..."],
+        "poorSignals": ["...", "...", "...", "...", "..."],
+        "notes": "..."
       },
       "isMandatory": true,
       "order": 1
     }
   ],
   "timeAnalysis": {
-    "totalMinutes": 14.5,
-    "breakdown": {
-      "simple": 2,
-      "moderate": 3,
-      "complex": 1
-    },
-    "withinBudget": true,
-    "summary": "6 questions: 2 simple (4.0 min) + 3 moderate (7.5 min) + 1 complex (3.0 min) = 14.5 min"
+    "totalEstimatedMinutes": <sum of mandatory question estimatedMinutes>,
+    "withinBudget": <true if total <= ${screeningTime}>,
+    "summary": "<2-3 sentence summary of the time breakdown>"
   }
 }
 
@@ -1366,40 +901,20 @@ Only output valid JSON. No markdown code blocks.`;
         description: c.description,
       }));
       
-      let correctedCount = 0;
       const questions: ScreeningQuestion[] = (parsed.questions || []).map((q: any, idx: number) => {
-        // Extract complexity from AI response, validate it
-        let complexity = q.complexity || "moderate";
-        if (!["simple", "moderate", "complex"].includes(complexity)) {
-          complexity = "moderate";
-        }
-        
-        // AUTO-CORRECT complexity based on word count and content analysis
-        // The AI often misclassifies complex questions as simple
-        const corrected = autoCorrectComplexity({ ...q, complexity });
-        if (corrected.corrected) {
-          correctedCount++;
-        }
-        
         return {
           id: q.id || `q_${generateId()}`,
           competencyId: q.competencyId,
           question: q.question,
-          complexity: corrected.complexity,
-          estimatedMinutes: corrected.estimatedMinutes,
-          rubric: q.rubric,
+          complexity: q.complexity || undefined,
+          estimatedMinutes: typeof q.estimatedMinutes === "number" ? q.estimatedMinutes : 2.5,
+          rubric: q.rubric || { typicalReasoning: "", goodSignals: [], moderateSignals: [], poorSignals: [], notes: "" },
           isMandatory: q.isMandatory ?? true,
           order: q.order || idx + 1,
         };
       });
       
-      if (correctedCount > 0) {
-        geminiLog.info(`Auto-corrected ${correctedCount} question(s) with wrong complexity classification`);
-      }
-      
-      // Extract AI's time analysis if provided
       const timeAnalysis = parsed.timeAnalysis || null;
-      
       return { competencies, questions, timeAnalysis };
     };
 
