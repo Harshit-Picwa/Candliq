@@ -475,25 +475,39 @@ function normalizeQuestions(
  */
 function calculateMaxQuestions(interviewDuration?: number): number {
   if (typeof interviewDuration !== "number" || Number.isNaN(interviewDuration) || interviewDuration <= 0) {
-    return 6; // Default to 6 questions for 15 minute Q&A screening time
+    return 6;
   }
 
   const avgMinutesPerQuestion = 2.5;
-  
   const maxQuestions = Math.max(1, Math.floor(interviewDuration / avgMinutesPerQuestion));
   
-  geminiLog.info(`Time budget (Q&A only, excludes intro/follow-ups/outro): ${interviewDuration} mins / ${avgMinutesPerQuestion.toFixed(1)} mins avg per Q = ${maxQuestions} main questions`);
+  geminiLog.info(`Time budget (Q&A only): ${interviewDuration} mins / ${avgMinutesPerQuestion.toFixed(1)} avg = ${maxQuestions} main questions`);
   
   return maxQuestions;
+}
+
+function recalculateMaxFromActualTimes(questions: Array<{ estimatedMinutes?: number }>, screeningTime: number): number {
+  if (questions.length === 0) return calculateMaxQuestions(screeningTime);
+  const avgActual = questions.reduce((s, q) => s + (q.estimatedMinutes || 2.5), 0) / questions.length;
+  const recalculated = Math.max(1, Math.floor(screeningTime / avgActual));
+  geminiLog.info(`Recalculated max from actual AI times: avg ${avgActual.toFixed(1)} min/Q => ${recalculated} questions for ${screeningTime} min`);
+  return recalculated;
 }
 
 /**
  * Calculate number of buffer questions to generate (2-3 extra questions)
  * These are optional questions that can replace excluded main questions
  */
-function calculateBufferQuestions(mainQuestions: number): number {
-  // Always generate 2-3 buffer questions for flexibility
-  return mainQuestions <= 5 ? 2 : 3;
+function calculateBufferQuestions(mainQuestions: number, totalMinutes?: number, screeningTime?: number): number {
+  const baseBuffer = mainQuestions <= 5 ? 2 : 3;
+  if (typeof totalMinutes === "number" && typeof screeningTime === "number" && totalMinutes > screeningTime) {
+    const extraTime = totalMinutes - screeningTime;
+    const extraBuffer = Math.floor(extraTime / 3);
+    const adjusted = Math.min(baseBuffer + extraBuffer, mainQuestions);
+    geminiLog.info(`Buffer: base ${baseBuffer} + ${extraBuffer} extra (${extraTime.toFixed(0)} min spare in total interview) = ${adjusted}`);
+    return adjusted;
+  }
+  return baseBuffer;
 }
 
 /**
@@ -629,10 +643,6 @@ function getAdaptiveComplexityDistribution(screeningTime: number, maxQuestions: 
   return { simple, moderate, complex, simplePercent, moderatePercent, complexPercent };
 }
 
-/**
- * Validate and log timeline fit for questions
- * Uses AI-assigned complexity from questions
- */
 function validateTimelineFit(
   questions: ScreeningQuestion[],
   interviewDuration: number,
@@ -641,85 +651,207 @@ function validateTimelineFit(
   const mandatory = questions.filter(q => q.isMandatory !== false);
   const estimatedTime = calculateTotalMinutesFromQuestions(mandatory);
   
-  geminiLog.info(`${context}: ${mandatory.length} Q&A questions, estimated ${estimatedTime.toFixed(1)} min (Q&A budget: ${interviewDuration} min, excludes intro/follow-ups)`);
+  geminiLog.info(`${context}: ${mandatory.length} Q&A questions, estimated ${estimatedTime.toFixed(1)} min (budget: ${interviewDuration} min)`);
   
   if (estimatedTime > interviewDuration) {
-    geminiLog.warn(`${context}: Exceeds Q&A time budget by ${(estimatedTime - interviewDuration).toFixed(1)} min`);
+    geminiLog.warn(`${context}: Exceeds budget by ${(estimatedTime - interviewDuration).toFixed(1)} min`);
   } else {
-    geminiLog.success(`${context}: Within Q&A time budget (${(interviewDuration - estimatedTime).toFixed(1)} min remaining)`);
+    geminiLog.success(`${context}: Within budget (${(interviewDuration - estimatedTime).toFixed(1)} min remaining)`);
   }
 }
 
-/**
- * Validate that questions meet the target complexity distribution.
- * Uses AI-assigned complexity from questions, adjusts if over time budget.
- */
-function validateComplexityDistribution(
-  questions: ScreeningQuestion[],
-  maxQuestions: number,
-  screeningTime: number
-) {
-  const mandatory = questions.filter(q => q.isMandatory !== false);
-  
+function clampEstimatedMinutes(questions: ScreeningQuestion[]): ScreeningQuestion[] {
+  return questions.map(q => {
+    let est = q.estimatedMinutes || 2.5;
+    if (est < 0.5) est = 0.5;
+    if (est > 6.0) est = 6.0;
+    if (est !== q.estimatedMinutes) {
+      geminiLog.info(`Clamped time for "${q.question?.substring(0, 40)}...": ${q.estimatedMinutes} → ${est} min`);
+    }
+    return { ...q, estimatedMinutes: est };
+  });
+}
+
+function ensureComplexityAssigned(questions: ScreeningQuestion[]): ScreeningQuestion[] {
+  return questions.map(q => {
+    if (q.complexity && ["simple", "moderate", "complex"].includes(q.complexity)) {
+      const correction = autoCorrectComplexity(q);
+      if (correction.corrected) {
+        return { ...q, complexity: correction.complexity };
+      }
+      return q;
+    }
+    const { complexity } = autoCorrectComplexity(q);
+    geminiLog.info(`Auto-assigned complexity for "${q.question?.substring(0, 40)}...": ${complexity}`);
+    return { ...q, complexity };
+  });
+}
+
+function smartTrimForTimeBudget(
+  mandatory: ScreeningQuestion[],
+  screeningTime: number,
+  maxQuestions: number
+): ScreeningQuestion[] {
   const totalTime = calculateTotalMinutesFromQuestions(mandatory);
   
-  geminiLog.info(`Total Q&A time: ${totalTime.toFixed(1)}/${screeningTime} min (excludes intro/follow-ups)`);
-  
   if (totalTime <= screeningTime && mandatory.length <= maxQuestions) {
-    geminiLog.success(`Q&A questions fit within time budget`);
+    geminiLog.success(`Q&A questions fit within time budget: ${totalTime.toFixed(1)}/${screeningTime} min`);
     return mandatory;
   }
   
-  geminiLog.warn(`Adjusting Q&A questions to fit time budget`);
+  geminiLog.warn(`Trimming: ${totalTime.toFixed(1)} min > ${screeningTime} min budget OR ${mandatory.length} > ${maxQuestions} max`);
+  
+  const competencyCoverage = new Map<string, number>();
+  mandatory.forEach(q => {
+    const comp = q.competencyId || "unknown";
+    competencyCoverage.set(comp, (competencyCoverage.get(comp) || 0) + 1);
+  });
+  
   let adjusted = [...mandatory];
   
   while (calculateTotalMinutesFromQuestions(adjusted) > screeningTime || adjusted.length > maxQuestions) {
-    if (adjusted.length > 0) {
-      const highestTimeIdx = adjusted.reduce((maxIdx, q, idx, arr) => 
-        (q.estimatedMinutes || 2.5) > (arr[maxIdx].estimatedMinutes || 2.5) ? idx : maxIdx, 0);
-      adjusted.splice(highestTimeIdx, 1);
+    if (adjusted.length <= 1) break;
+    
+    let bestRemovalIdx = -1;
+    let bestScore = -Infinity;
+    
+    for (let i = 0; i < adjusted.length; i++) {
+      const q = adjusted[i];
+      const comp = q.competencyId || "unknown";
+      const compCount = competencyCoverage.get(comp) || 1;
+      
+      let removalScore = 0;
+      removalScore += (q.estimatedMinutes || 2.5) * 2;
+      if (compCount > 1) removalScore += 5;
+      if (compCount <= 1) removalScore -= 10;
+      if (q.complexity === "complex") removalScore += 1;
+      if (q.complexity === "simple") removalScore -= 1;
+      
+      if (removalScore > bestScore) {
+        bestScore = removalScore;
+        bestRemovalIdx = i;
+      }
+    }
+    
+    if (bestRemovalIdx >= 0) {
+      const removed = adjusted[bestRemovalIdx];
+      const comp = removed.competencyId || "unknown";
+      const currentCount = competencyCoverage.get(comp) || 0;
+      competencyCoverage.set(comp, Math.max(0, currentCount - 1));
+      geminiLog.info(`Removed Q: "${removed.question?.substring(0, 50)}..." (${removed.estimatedMinutes?.toFixed(1)} min, comp: ${comp})`);
+      adjusted.splice(bestRemovalIdx, 1);
     } else {
       break;
     }
   }
   
   const finalTime = calculateTotalMinutesFromQuestions(adjusted);
-  geminiLog.info(`Adjusted to ${adjusted.length} Q&A questions, ${finalTime.toFixed(1)} min Q&A time`);
+  const remainingComps = new Set(adjusted.map(q => q.competencyId)).size;
+  geminiLog.info(`Trimmed to ${adjusted.length} questions, ${finalTime.toFixed(1)}/${screeningTime} min, covering ${remainingComps} competencies`);
   
   return adjusted;
 }
 
+function fillRemainingTime(
+  selected: ScreeningQuestion[],
+  available: ScreeningQuestion[],
+  screeningTime: number,
+  maxQuestions: number
+): ScreeningQuestion[] {
+  const currentTime = calculateTotalMinutesFromQuestions(selected);
+  const remainingTime = screeningTime - currentTime;
+  
+  if (remainingTime < 1.0 || selected.length >= maxQuestions) return selected;
+  
+  const selectedIds = new Set(selected.map(q => q.id));
+  const coveredComps = new Map<string, number>();
+  selected.forEach(q => {
+    const comp = q.competencyId || "unknown";
+    coveredComps.set(comp, (coveredComps.get(comp) || 0) + 1);
+  });
+  
+  const candidates = available
+    .filter(q => !selectedIds.has(q.id))
+    .filter(q => (q.estimatedMinutes || 2.5) <= remainingTime)
+    .sort((a, b) => {
+      const aComp = a.competencyId || "unknown";
+      const bComp = b.competencyId || "unknown";
+      const aCount = coveredComps.get(aComp) || 0;
+      const bCount = coveredComps.get(bComp) || 0;
+      if (aCount !== bCount) return aCount - bCount;
+      return (a.estimatedMinutes || 2.5) - (b.estimatedMinutes || 2.5);
+    });
+  
+  let result = [...selected];
+  let usedTime = currentTime;
+  
+  for (const candidate of candidates) {
+    if (result.length >= maxQuestions) break;
+    const est = candidate.estimatedMinutes || 2.5;
+    if (usedTime + est <= screeningTime) {
+      result.push(candidate);
+      usedTime += est;
+      const comp = candidate.competencyId || "unknown";
+      coveredComps.set(comp, (coveredComps.get(comp) || 0) + 1);
+      geminiLog.info(`Filled gap: added "${candidate.question?.substring(0, 40)}..." (${est.toFixed(1)} min)`);
+    }
+  }
+  
+  if (result.length > selected.length) {
+    geminiLog.info(`Filled ${result.length - selected.length} questions into remaining ${remainingTime.toFixed(1)} min gap`);
+  }
+  
+  return result;
+}
+
 function enforceTimeBudget(
   questions: ScreeningQuestion[],
-  interviewDuration?: number
+  interviewDuration?: number,
+  totalMinutes?: number
 ) {
-  const maxQuestions = calculateMaxQuestions(interviewDuration);
-  const bufferCount = calculateBufferQuestions(maxQuestions);
   const screeningTime = interviewDuration || 15;
   
-  // Separate mandatory and buffer questions
+  questions = clampEstimatedMinutes(questions);
+  questions = ensureComplexityAssigned(questions);
+  
   const mandatory = questions.filter(q => q.isMandatory !== false);
   const buffer = questions.filter(q => q.isMandatory === false);
   
-  // Validate and adjust mandatory questions based on complexity distribution
-  let trimmedMandatory = validateComplexityDistribution(mandatory, maxQuestions, screeningTime);
+  const fixedMax = calculateMaxQuestions(interviewDuration);
+  const actualMax = recalculateMaxFromActualTimes(mandatory, screeningTime);
+  const maxQuestions = mandatory.length > 0 ? actualMax : fixedMax;
+  const bufferCount = calculateBufferQuestions(maxQuestions, totalMinutes, screeningTime);
   
-  // Trim buffer questions if too many
+  geminiLog.info(`Max questions: ${maxQuestions} (from actual times), buffer target: ${bufferCount}`);
+  
+  let trimmedMandatory = smartTrimForTimeBudget(mandatory, screeningTime, maxQuestions);
+  
+  trimmedMandatory = fillRemainingTime(trimmedMandatory, mandatory, screeningTime, maxQuestions);
+  
   let trimmedBuffer = buffer;
   if (buffer.length > bufferCount) {
     trimmedBuffer = buffer.slice(0, bufferCount);
-    console.warn(
-      `[gemini] Buffer trimmed: ${buffer.length - bufferCount} excess buffer questions removed`
-    );
   }
   
-  // Combine and reorder
+  if (trimmedBuffer.length < bufferCount && mandatory.length > trimmedMandatory.length) {
+    const trimmedIds = new Set(trimmedMandatory.map(q => q.id));
+    const bufferIds = new Set(trimmedBuffer.map(q => q.id));
+    const demoted = mandatory.filter(q => !trimmedIds.has(q.id) && !bufferIds.has(q.id));
+    for (const q of demoted) {
+      if (trimmedBuffer.length >= bufferCount) break;
+      trimmedBuffer.push({ ...q, isMandatory: false });
+      geminiLog.info(`Demoted to buffer: "${q.question?.substring(0, 40)}..."`);
+    }
+  }
+  
   const combined = [...trimmedMandatory, ...trimmedBuffer].map((q, idx) => ({
     ...q,
     order: idx + 1,
   }));
   
-  geminiLog.info(`Final after time budget: ${trimmedMandatory.length} main + ${trimmedBuffer.length} buffer = ${combined.length} total`);
+  const finalTime = calculateTotalMinutesFromQuestions(trimmedMandatory);
+  const utilization = ((finalTime / screeningTime) * 100).toFixed(0);
+  geminiLog.info(`Final: ${trimmedMandatory.length} main (${finalTime.toFixed(1)}/${screeningTime} min, ${utilization}% utilized) + ${trimmedBuffer.length} buffer = ${combined.length} total`);
   
   return combined;
 }
@@ -739,7 +871,8 @@ export async function extractCompetenciesAndQuestions(
   location?: string,
   interviewDuration?: number,
   existingQuestions?: ScreeningQuestion[],
-  chatHistory: AIChatMessage[] = []
+  chatHistory: AIChatMessage[] = [],
+  totalMinutes?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
   const screeningTime = interviewDuration || 15;
 
@@ -961,7 +1094,7 @@ Respond with ONLY the full JSON object in the same format. No markdown.`;
     }
 
     questions = questions.map((q, idx) => ({ ...q, order: idx + 1 }));
-    questions = enforceTimeBudget(questions, interviewDuration);
+    questions = enforceTimeBudget(questions, interviewDuration, totalMinutes);
 
     const finalMandatory = questions.filter(q => q.isMandatory !== false);
     const finalBuffer = questions.filter(q => q.isMandatory === false);
@@ -972,7 +1105,8 @@ Respond with ONLY the full JSON object in the same format. No markdown.`;
     if (finalEstimatedTime > screeningTime) {
       geminiLog.warn(`Q&A time (${finalEstimatedTime.toFixed(1)} min) exceeds budget (${screeningTime} min)`);
     } else {
-      geminiLog.success(`Q&A time validated: ${finalEstimatedTime.toFixed(1)} min / ${screeningTime} min budget`);
+      const utilization = ((finalEstimatedTime / screeningTime) * 100).toFixed(0);
+      geminiLog.success(`Q&A time: ${finalEstimatedTime.toFixed(1)}/${screeningTime} min (${utilization}% utilized)`);
     }
 
     return { competencies, questions, history: updatedHistory };
@@ -1005,10 +1139,12 @@ async function extractCompetenciesAndQuestionsBatched(
   location?: string,
   interviewDuration?: number,
   existingQuestions?: ScreeningQuestion[],
-  chatHistory: AIChatMessage[] = []
+  chatHistory: AIChatMessage[] = [],
+  totalMinutesParam?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
   const maxQuestions = calculateMaxQuestions(interviewDuration);
-  const bufferQuestions = calculateBufferQuestions(maxQuestions);
+  const screeningTimeForBuffer = interviewDuration || 15;
+  const bufferQuestions = calculateBufferQuestions(maxQuestions, totalMinutesParam, screeningTimeForBuffer);
   const totalQuestions = maxQuestions + bufferQuestions;
   const screeningTime = interviewDuration || 15;
   
@@ -1105,8 +1241,7 @@ async function extractCompetenciesAndQuestionsBatched(
     order: idx + 1,
   }));
   
-  // Enforce time budget
-  allQuestions = enforceTimeBudget(allQuestions, interviewDuration);
+  allQuestions = enforceTimeBudget(allQuestions, interviewDuration, totalMinutesParam);
   
   const finalTime = calculateTotalMinutesFromQuestions(allQuestions.filter(q => q.isMandatory));
   
@@ -1227,7 +1362,8 @@ export async function regenerateQuestionsWithInstructions(
   location?: string,
   interviewDuration?: number,
   existingQuestions?: ScreeningQuestion[],
-  chatHistory: AIChatMessage[] = []
+  chatHistory: AIChatMessage[] = [],
+  totalMinutes?: number
 ): Promise<{ competencies: Competency[]; questions: ScreeningQuestion[]; history: AIChatMessage[] }> {
   return extractCompetenciesAndQuestions(
     jdText,
@@ -1237,7 +1373,8 @@ export async function regenerateQuestionsWithInstructions(
     location,
     interviewDuration,
     existingQuestions,
-    chatHistory
+    chatHistory,
+    totalMinutes
   );
 }
 
