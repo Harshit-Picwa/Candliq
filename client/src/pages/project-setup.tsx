@@ -65,6 +65,20 @@ export default function ProjectSetupPage() {
   const initialStepSet = useRef(false);
   const stageSaved = useRef(false);
   const urlStepRef = useRef<1 | 2 | 3 | null>(null);
+  
+  // Snapshot of field values at the time questions were last generated.
+  // Used to detect if regeneration is needed (survives intermediate saves).
+  const generationBaselineRef = useRef<{
+    jdText: string;
+    smeNotes: string;
+    companyWebsite: string;
+    interviewDuration: number | "";
+    totalMinutes: number | "";
+    locationCity: string;
+    locationState: string;
+    locationCountry: string;
+    title: string;
+  } | null>(null);
 
   const hasExistingQuestions = (project?.screeningQuestionsJson?.length || 0) > 0;
   const projectRecord = project as Record<string, unknown> | undefined;
@@ -92,6 +106,20 @@ export default function ProjectSetupPage() {
     locationChanged ||
     interviewDuration !== normalizedProjectInterviewMinutes ||
     totalMinutes !== normalizedProjectTotalMinutes;
+
+  // Compare against baseline (values at last question generation) — survives intermediate saves
+  const baseline = generationBaselineRef.current;
+  const hasEditsSinceGeneration = baseline ? (
+    jdText !== baseline.jdText ||
+    smeNotes !== baseline.smeNotes ||
+    companyWebsite !== baseline.companyWebsite ||
+    interviewDuration !== baseline.interviewDuration ||
+    totalMinutes !== baseline.totalMinutes ||
+    title !== baseline.title ||
+    (location?.city ?? "") !== baseline.locationCity ||
+    (location?.state ?? "") !== baseline.locationState ||
+    (location?.country ?? "") !== baseline.locationCountry
+  ) : hasEdits;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -124,6 +152,21 @@ export default function ProjectSetupPage() {
       const totalNum = totalRaw != null && totalRaw !== "" ? Number(totalRaw) : NaN;
       setTotalMinutes(!Number.isNaN(totalNum) && totalNum >= 0 ? totalNum : "");
       
+      // Capture baseline values on first load (represents state at last generation)
+      if (!generationBaselineRef.current) {
+        generationBaselineRef.current = {
+          jdText: project.jdText || "",
+          smeNotes: project.smeNotesText || "",
+          companyWebsite: (p.companyWebsite as string) || "",
+          interviewDuration: !Number.isNaN(screeningNum) && screeningNum >= 0 ? screeningNum : "",
+          totalMinutes: !Number.isNaN(totalNum) && totalNum >= 0 ? totalNum : "",
+          locationCity: locCity,
+          locationState: locState,
+          locationCountry: locCountry,
+          title: project.title,
+        };
+      }
+
       // Restore saved setup step on initial load
       if (!initialStepSet.current) {
         const savedStep = p.setupStep as number | undefined;
@@ -932,7 +975,7 @@ export default function ProjectSetupPage() {
                   <Check className="w-4 h-4" />
                   Accept & Finish
                 </Button>
-              ) : hasExistingQuestions && !hasEdits ? (
+              ) : hasExistingQuestions && !hasEditsSinceGeneration ? (
                 <Button
                   onClick={() => navigate(`/projects/${id}/questions${isPreviewMode ? '?preview=true' : ''}`)}
                   className="rounded-xl px-8 h-12 font-black text-base shadow-lg shadow-primary/20 gap-2.5 w-full sm:w-auto bg-primary hover:scale-[1.02] active:scale-[0.98] transition-all"
@@ -941,7 +984,7 @@ export default function ProjectSetupPage() {
                   Next Step
                   <ChevronRight className="w-4 h-4" />
                 </Button>
-              ) : hasExistingQuestions && hasEdits ? (
+              ) : hasExistingQuestions && hasEditsSinceGeneration ? (
                 <AlertDialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
                   <Button
                     onClick={() => setShowGenerateConfirm(true)}
