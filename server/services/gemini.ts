@@ -341,8 +341,8 @@ function isRetryableGeminiError(error: any) {
 }
 
 function getGeminiModelCandidates() {
-  const preferred = process.env.GEMINI_MODEL || "gemini-2.5-pro";
-  const fallbacks = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const preferred = process.env.GEMINI_MODEL || "gemini-3-pro-preview";
+  const fallbacks = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
   return [preferred, ...fallbacks].filter((v, i, a) => a.indexOf(v) === i);
 }
 
@@ -2088,7 +2088,7 @@ Only output valid JSON. No markdown code blocks.`;
     let text: string;
     try {
       geminiLog.info("Using Gemini 2.5 Pro with thinking mode (REST API) for time analysis");
-      const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+      const restUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${apiKey}`;
       const restBody = {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
