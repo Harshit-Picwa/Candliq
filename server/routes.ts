@@ -181,34 +181,11 @@ export async function registerRoutes(
         project.totalMinutes || undefined
       );
       console.log("[generate-questions] Got competencies:", competencies.length, "questions:", questions.length);
-
-      const pendingQuestions = questions.map((q: any) => ({
-        ...q,
-        isMandatory: false,
-        estimatedMinutes: undefined,
-      }));
-      console.log("[generate-questions] Set all questions to pending (isMandatory=false, no estimates)");
-
-      // Run time analysis immediately to get estimates and inclusion decisions
-      const configuredScreeningTime = project.interviewDuration || 15;
-      let finalQuestions = pendingQuestions;
-      try {
-        console.log("[generate-questions] Running time analysis on generated questions");
-        const analysis = await analyzeQuestionTime(pendingQuestions, competencies, configuredScreeningTime, true);
-        finalQuestions = pendingQuestions.map((q: any) => {
-          const analyzed = analysis.breakdown.find(b => b.questionId === q.id);
-          const newEstimate = analyzed && typeof analyzed.estimatedMinutes === "number" ? analyzed.estimatedMinutes : undefined;
-          const newMandatory = analysis.includedQuestionIds ? analysis.includedQuestionIds.includes(q.id) : false;
-          return { ...q, estimatedMinutes: newEstimate, isMandatory: newMandatory };
-        });
-        console.log("[generate-questions] Time analysis complete - assigned estimates and inclusion");
-      } catch (analysisError: any) {
-        console.warn("[generate-questions] Time analysis failed, saving without estimates:", analysisError?.message);
-      }
+      console.log("[generate-questions] Questions already have AI-generated estimates and inclusion from generation prompt");
 
       const updated = await storage.updateProject(project.id, {
         competencyRubricJson: competencies,
-        screeningQuestionsJson: finalQuestions,
+        screeningQuestionsJson: questions,
         aiChatHistoryJson: history as any,
       });
 
@@ -245,33 +222,11 @@ export async function registerRoutes(
         project.totalMinutes || undefined
       );
       console.log("[regenerate-questions] Got competencies:", competencies.length, "questions:", questions.length);
-
-      const pendingQuestions = questions.map((q: any) => ({
-        ...q,
-        isMandatory: false,
-        estimatedMinutes: undefined,
-      }));
-
-      // Run time analysis immediately to get estimates and inclusion decisions
-      const configuredScreeningTime = project.interviewDuration || 15;
-      let finalQuestions = pendingQuestions;
-      try {
-        console.log("[regenerate-questions] Running time analysis on regenerated questions");
-        const analysis = await analyzeQuestionTime(pendingQuestions, competencies, configuredScreeningTime, true);
-        finalQuestions = pendingQuestions.map((q: any) => {
-          const analyzed = analysis.breakdown.find(b => b.questionId === q.id);
-          const newEstimate = analyzed && typeof analyzed.estimatedMinutes === "number" ? analyzed.estimatedMinutes : undefined;
-          const newMandatory = analysis.includedQuestionIds ? analysis.includedQuestionIds.includes(q.id) : false;
-          return { ...q, estimatedMinutes: newEstimate, isMandatory: newMandatory };
-        });
-        console.log("[regenerate-questions] Time analysis complete - assigned estimates and inclusion");
-      } catch (analysisError: any) {
-        console.warn("[regenerate-questions] Time analysis failed, saving without estimates:", analysisError?.message);
-      }
+      console.log("[regenerate-questions] Questions already have AI-generated estimates and inclusion from generation prompt");
 
       const updated = await storage.updateProject(project.id, {
         competencyRubricJson: competencies,
-        screeningQuestionsJson: finalQuestions,
+        screeningQuestionsJson: questions,
         aiChatHistoryJson: history as any,
       });
 
@@ -351,32 +306,17 @@ export async function registerRoutes(
         (project.aiChatHistoryJson || []) as any
       );
 
-      // Merge refined questions back into all questions
       const mergedQuestions = allQuestions.map(q => {
         const refined = refinedBatch.find((r: any) => r.id === q.id);
-        return refined || q;
+        if (refined) {
+          return { ...refined, isMandatory: q.isMandatory, estimatedMinutes: (q as any).estimatedMinutes };
+        }
+        return q;
       });
-
-      // Run time analysis on all questions to update estimates after refinement
-      const competencies = (project.competencyRubricJson || []) as Competency[];
-      const configuredScreeningTime = project.interviewDuration || 15;
-      let finalQuestions = mergedQuestions;
-      try {
-        console.log(`[refine-selected] Running time analysis after refining ${questionsToRefine.length} questions`);
-        const analysis = await analyzeQuestionTime(mergedQuestions, competencies, configuredScreeningTime, true);
-        finalQuestions = mergedQuestions.map(q => {
-          const analyzed = analysis.breakdown.find(b => b.questionId === q.id);
-          const newEstimate = analyzed && typeof analyzed.estimatedMinutes === "number" ? analyzed.estimatedMinutes : (q as any).estimatedMinutes;
-          const newMandatory = analysis.includedQuestionIds ? analysis.includedQuestionIds.includes(q.id) : q.isMandatory;
-          return { ...q, estimatedMinutes: newEstimate, isMandatory: newMandatory };
-        });
-        console.log("[refine-selected] Time analysis complete");
-      } catch (analysisError: any) {
-        console.warn("[refine-selected] Time analysis failed, saving without updated estimates:", analysisError?.message);
-      }
+      console.log(`[refine-selected] Preserved original estimates and inclusion for ${questionsToRefine.length} refined questions`);
 
       const updated = await storage.updateProject(project.id, {
-        screeningQuestionsJson: finalQuestions,
+        screeningQuestionsJson: mergedQuestions,
         aiChatHistoryJson: history as any,
       });
 
